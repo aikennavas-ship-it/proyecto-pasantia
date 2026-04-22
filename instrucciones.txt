@@ -1,0 +1,99 @@
+# MANUAL DE OPERACIÓN E INSTRUCCIONES TÉCNICAS - SISTEMA DE GESTIÓN CANTV
+========================================================================
+
+Este documento detalla la arquitectura, el código y la operación del sistema de Gestión de Actividades, Sobretiempos y Viáticos para el Departamento de Datos y Transmisión de CANTV.
+
+## 1. ESTRUCTURA DE CARPETAS Y ARCHIVOS
+--------------------------------------
+
+### Carpeta Raíz:
+- `package.json`: Administra las librerías necesarias (React, Firebase, Tailwind, Lucide, Recharts, XLSX, jsPDF).
+- `tailwind.config.js`: Configura los estilos y colores personalizados (Azul CANTV, Rojo CANTV).
+- `vite.config.ts`: Configuración del motor de compilación Vite.
+- `firebase.json` / `firestore.rules`: Reglas de seguridad para la base de datos Firestore.
+
+### Carpeta `/src`:
+- `main.tsx`: Punto de entrada de la aplicación. No se debe modificar.
+- `App.tsx`: Lógica principal, manejo de rutas, autenticación y exportación de datos.
+- `firebase.ts`: Conexión directa con los servicios de Google Firebase.
+- `types.ts`: Define las "formas" de los datos (qué campos tiene una actividad o un usuario).
+- `index.css`: Estilos globales y utilidades de Tailwind CSS.
+
+### Carpeta `/src/components`:
+- `Login.tsx`: Interfaz de inicio de sesión, registro y recuperación.
+- `Layout.tsx`: Estructura visual (barra lateral, encabezado y contenedor principal).
+- `Dashboard.tsx`: Gráficos estadísticos y resumen de métricas.
+- `ActivityCard.tsx`: Visualización individual de cada reporte técnico.
+- `ActivityForm.tsx`: Formulario dinámico para registrar nuevas labores.
+
+---
+
+## 2. ANÁLISIS POR ARCHIVO (LINEA POR LINEA / FRAGMENTO)
+--------------------------------------------------------
+
+### App.tsx (El Cerebro)
+- **Líneas 47-52**: `ADMIN_EMAILS`. Aquí se definen los correos que tienen permisos de Administrador automáticos. Si tu correo está aquí, verás el Panel completo.
+- **Líneas 69-102**: `useEffect` de Perfil. Revisa si el usuario existe en la base de datos; si no, lo crea con el rol "tecnico" o "admin".
+- **Líneas 127-144**: `exportToExcel`. Utiliza la librería `xlsx` para transformar los datos de Firestore en un archivo descargable.
+- **Líneas 146-177**: `exportToPDF`. Utiliza `jspdf` para crear un reporte profesional con el logo y colores de CANTV.
+- **Líneas 188-202**: Renderizado del Login si no hay usuario detectado.
+
+### Layout.tsx (La Estructura)
+- **Líneas 16-20**: `navItems`. Define los botones de "Panel", "Actividades" y "Configuración".
+- **Logo (Visual)**: Se construye con un `div` de clase `bg-brand-blue` y una letra "C". No es una imagen externa, es código CSS puro para mayor velocidad.
+- **Fragmento de Cabecera**: Muestra el nombre del usuario y su rol (Admin/Técnico) dinámicamente.
+
+### Dashboard.tsx (Estadísticas)
+- **Líneas 14-19**: Cálculos de `stats`. Filtra las actividades para contar cuántas están terminadas o pendientes.
+- **`typeData` / `statusData`**: Estructuras de datos que alimentan a `BarChart` y `PieChart` (gráficos de barras y torta).
+
+### Login.tsx (Seguridad Visual)
+- **Imagen de Fondo**: Usa una URL de `unsplash.com` (línea 35) que muestra una escena técnica/profesional.
+- **Estado `isRegistering`**: Cambia el formulario entre "Ingresar" y "Registrarse" con animaciones suaves de `framer-motion`.
+
+---
+
+## 3. IDENTIFICACIÓND DE RECURSOS
+--------------------------------
+
+- **IMÁGENES**: La imagen de fondo del login está en `src/components/Login.tsx` línea 35.
+- **ICONOS**: Se utiliza la librería `lucide-react`. Cada icono (Mail, Lock, Settings) es un componente importado.
+- **LOGO**: Construido en `src/components/Layout.tsx` líneas 28-30.
+- **TEXTO**: Todo el texto está en español, distribuido en los archivos `.tsx` de la carpeta `components`.
+- **USUARIOS**: Se almacenan en la colección `users` de Firebase Firestore.
+- **CONTRASEÑAS**: **IMPORTANTE**. Las contraseñas NO se guardan en una tabla visible. Firebase Auth las encripta y protege. Ni siquiera el administrador puede verlas, solo restablecerlas por correo.
+
+---
+
+## 4. BASE DE DATOS (FIRESTORE)
+------------------------------
+
+- **¿Dónde está?**: En la nube de Google Firebase.
+- **¿Cómo ingresar?**: 
+  1. Ve a `console.firebase.google.com`.
+  2. Selecciona tu proyecto.
+  3. Haz clic en **Firestore Database**.
+  4. Verás dos colecciones: `users` (perfiles) y `activities` (los reportes técnicos).
+- **¿Qué pasa si borro algo?**: 
+  - Si borras un usuario en `users`, perderá su configuración de rol pero podrá volver a entrar (si existe en Auth).
+  - Si borras una actividad, desaparecerá de los gráficos y reportes permanentemente.
+
+---
+
+## 5. INSTRUCCIONES PARA PRINCIPIANTES EN GOOGLE AI STUDIO
+---------------------------------------------------------
+
+### Primera vez:
+1. Al abrir el proyecto, verás la vista de código a la izquierda y la **Vista Previa** a la derecha.
+2. Si aparece un error de Firebase, asegúrate de haber configurado las "Secrets" o variables de entorno en el menú de ajustes si el sistema lo requiere.
+3. El sistema se compila automáticamente. Si haces un cambio, espera unos segundos y la vista previa se actualizará.
+
+### Cómo operar:
+1. **Registro**: Crea una cuenta con tu correo real.
+2. **Activación**: Si tu correo está en la lista de `ADMIN_EMAILS` de `App.tsx`, entrarás directo al Panel. Si no, verás una pantalla de "Acceso Restringido" hasta que un admin te cambie el rol en la base de datos.
+3. **Nueva Actividad**: Haz clic en el botón "+" en la sección de Actividades. Llena los datos (Incidente, Horas, Viáticos) y dale a "Registrar".
+4. **Reportes**: Entra a Actividades y usa el botón "Exportar" para obtener tu archivo Excel o PDF.
+
+### NOTA SOBRE MODIFICACIONES:
+- **Si modificas el código**: AI Studio detectará el cambio y reiniciará el servidor de desarrollo.
+- **Si eliminas un archivo clave**: El sistema fallará en la compilación. Siempre revisa la pestaña de "Output" o consola para ver errores de TypeScript.

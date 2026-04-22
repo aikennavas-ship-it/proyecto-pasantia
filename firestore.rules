@@ -1,0 +1,176 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ------------------------------------------------------------------------
+    // Primitives & Identity Helpers
+    // ------------------------------------------------------------------------
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    
+    function isOwner(uid) { 
+      return isSignedIn() && request.auth.uid == uid; 
+    }
+    
+    function getUserRole() {
+      let profile = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return (profile != null) ? profile.data.role : null;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email in ["aikennavas@gmail.com", "vantoniomolina@gmail.com", "admin@cantv.com.ve", "asistente@cantv.com.ve"] ||
+        getUserRole() == 'admin'
+      );
+    }
+    
+    // ------------------------------------------------------------------------
+    // Global Safety Net
+    // ------------------------------------------------------------------------
+    match /{document=**} { 
+      allow read, write: if false; 
+    }
+
+    // ------------------------------------------------------------------------
+    // Users Collection (PII)
+    // ------------------------------------------------------------------------
+    function isValidUserProfile(data) {
+      return data.size() >= 5 && data.size() <= 8 &&
+             data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'createdAt']) &&
+             data.uid is string && data.uid.size() <= 128 && data.uid == request.auth.uid &&
+             data.email is string && data.email.size() <= 200 &&
+             data.displayName is string && data.displayName.size() <= 100 &&
+             data.role in ['admin', 'supervisor', 'tecnico'] &&
+             data.createdAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      
+      allow create: if isValidId(userId) && isOwner(userId) && isValidUserProfile(incoming()) && 
+                    // Protect role escalation
+                    (incoming().role != 'admin' || request.auth.token.email in ["aikennavas@gmail.com", "admin@cantv.com.ve", "vantoniomolina@gmail.com"]);
+                    
+      allow update: if isValidId(userId) && (isOwner(userId) || isAdmin()) && isValidUserProfile(incoming()) &&
+                    (incoming().role == existing().role || isAdmin()) &&
+                    incoming().uid == existing().uid &&
+                    incoming().createdAt == existing().createdAt;
+                    
+      allow delete: if isAdmin();
+    }
+
+    // ------------------------------------------------------------------------
+    // Technicians Collection
+    // ------------------------------------------------------------------------
+    function isValidTechnician(data) {
+      return data.size() >= 1 && data.size() <= 30 &&
+             data.name is string &&
+             (!('employeeId' in data) || data.employeeId is string) &&
+             (!('specialty' in data) || data.specialty is string) &&
+             (!('status' in data) || data.status is string) &&
+             (!('createdAt' in data) || data.createdAt is timestamp || data.createdAt is string) &&
+             (!('isDeleted' in data) || data.isDeleted is bool) &&
+             (!('deletedAt' in data) || (data.deletedAt is timestamp || data.deletedAt == null || data.deletedAt is string)) &&
+             (!('updatedAt' in data) || data.updatedAt is timestamp || data.updatedAt is string);
+    }
+
+    match /technicians/{techId} {
+      allow get: if isValidId(techId) && isSignedIn();
+      allow list: if isSignedIn();
+      
+      allow create: if isValidId(techId) && isAdmin() && isValidTechnician(incoming());
+      
+      allow update: if isValidId(techId) && isAdmin() && isValidTechnician(incoming()) &&
+                    ( (!('createdAt' in existing()) && !('createdAt' in incoming())) || 
+                      (incoming().createdAt == existing().createdAt) );
+                    
+      allow delete: if isAdmin();
+    }
+
+    // ------------------------------------------------------------------------
+    // Activities Collection
+    // ------------------------------------------------------------------------
+    function isValidActivity(data) {
+      return data.size() >= 1 && data.size() <= 50 &&
+             data.title is string &&
+             (!('description' in data) || data.description is string) &&
+             (!('type' in data) || data.type is string) &&
+             (!('status' in data) || data.status is string) &&
+             (!('hasPerDiem' in data) || data.hasPerDiem is bool) &&
+             (!('date' in data) || data.date is timestamp || data.date is string) &&
+             (!('createdAt' in data) || data.createdAt is timestamp || data.createdAt is string) &&
+             (!('technicianId' in data) || data.technicianId is string) &&
+             (!('technicianName' in data) || data.technicianName is string) &&
+             (!('participants' in data) || data.participants is list) &&
+             (!('notes' in data) || data.notes is list) &&
+             (!('isDeleted' in data) || data.isDeleted is bool) &&
+             (!('deletedAt' in data) || data.deletedAt is timestamp || data.deletedAt == null || data.deletedAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt is timestamp || data.updatedAt is string) &&
+             (!('adminId' in data) || data.adminId is string) &&
+             (!('overtimeHours' in data) || data.overtimeHours is number) &&
+             (!('perDiemAmount' in data) || data.perDiemAmount is number) &&
+             (!('startTime' in data) || data.startTime is string) &&
+             (!('endTime' in data) || data.endTime is string) &&
+             (!('incidentNumber' in data) || data.incidentNumber is string) &&
+             (!('fleet' in data) || data.fleet is string);
+    }
+
+    match /activities/{activityId} {
+      allow get: if isValidId(activityId) && isSignedIn();
+      allow list: if isSignedIn();
+      
+      allow create: if isValidId(activityId) && isSignedIn() && isValidActivity(incoming());
+      
+      allow update: if isValidId(activityId) && 
+                    isSignedIn() && 
+                    isValidActivity(incoming()) &&
+                    (isAdmin() || existing().technicianId == request.auth.uid) &&
+                    ( (!('createdAt' in existing()) && !('createdAt' in incoming())) || 
+                      (incoming().createdAt == existing().createdAt) );
+                    
+      allow delete: if isAdmin();
+    }
+
+    // ------------------------------------------------------------------------
+    // Notifications Collection
+    // ------------------------------------------------------------------------
+    function isValidNotification(data) {
+      return data.size() >= 6 && data.size() <= 9 &&
+             data.keys().hasAll(['userId', 'userName', 'type', 'message', 'createdAt', 'readBy']) &&
+             data.userId is string && data.userId.size() <= 128 && data.userId == request.auth.uid &&
+             data.userName is string && data.userName.size() <= 100 &&
+             data.type is string && data.type.size() <= 50 &&
+             data.message is string && data.message.size() <= 500 &&
+             data.createdAt is timestamp &&
+             data.readBy is list && data.readBy.size() <= 1000;
+    }
+
+    match /notifications/{notifId} {
+      allow get: if isValidId(notifId) && isSignedIn();
+      allow list: if isSignedIn();
+      
+      allow create: if isValidId(notifId) && isSignedIn() && isValidNotification(incoming());
+      
+      allow update: if isValidId(notifId) && isSignedIn() && 
+                    incoming().size() == existing().size() &&
+                    incoming().createdAt == existing().createdAt &&
+                    incoming().type == existing().type &&
+                    incoming().message == existing().message &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['readBy']) &&
+                    incoming().readBy is list;
+                    
+      allow delete: if isAdmin();
+    }
+
+    // ------------------------------------------------------------------------
+    // Test Connection Connection
+    // ------------------------------------------------------------------------
+    match /test/connection {
+      allow read: if true;
+    }
+  }
+}

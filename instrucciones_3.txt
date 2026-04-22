@@ -1,0 +1,56 @@
+# MANUAL DE OPERACIÓN E INSTRUCCIONES TÉCNICAS - SISTEMA DE GESTIÓN CANTV (ACTUALIZACIÓN 3 - ENTREVISTA CLIENTE)
+======================================================================================================
+
+Esta versión es el resultado directo de la transcripción de la entrevista, enfocada en la automatización de reportes individuales y la gestión de infraestructura física (ODF).
+
+## 1. IMPLEMENTACIONES BASADAS EN LA ENTREVISTA (MODIFICACIÓN 3)
+--------------------------------------------------------------
+
+### Módulo de Reportes Avanzados (`ReportGenerator.tsx`)
+- **Excel Inteligente**: Ahora, al exportar sobretiempos, el sistema genera **HOJAS SEPARADAS POR PERSONA** dentro del mismo archivo Excel. Esto elimina el proceso manual de "copiar y pegar" mencionado por el cliente ("yo lo que hago es copiar el papel").
+- **Filtro por Persona**: Permite seleccionar un técnico específico y un rango de fechas para previsualizar sus horas extra y viáticos antes de la exportación.
+
+### Interfaz Gráfica de ODF (`ODFManagement.tsx`)
+- **Mapa de Fibra**: Representación visual de las Centrales de Aragua (Maracay, Cagua, etc.).
+- **Gestión de Hilos**: Puedes ver la disponibilidad de los hilos de fibra, su estado (Disponible, Ocupado, Dañado) y la distancia configurada, cumpliendo con la solicitud de "ver los hilos disponibles y su distancia".
+
+### Experiencia "Estética y Funcional" (`App.tsx`)
+- **Vista de Tabla (Excel Style)**: Se añadió un selector en la pestaña Actividades para cambiar entre vista de "Tarjetas" y vista de "Tabla". La vista de tabla permite una lectura rápida típica de una hoja de cálculo, tal como solicitó el usuario.
+- **Campo de Flota**: Se integró el registro de vehículos utilizados para cada labor.
+
+---
+
+## 2. RECURSOS Y ARCHIVOS CLAVE
+------------------------------
+
+- **ODF Visual**: `src/components/ODFManagement.tsx` (Componente gráfico interactivo).
+- **Reportes Nómina**: `src/components/ReportGenerator.tsx` (Lógica de agrupación por técnico).
+- **Tablas Dinámicas**: Implementadas directamente en la vista de `activities` de `App.tsx`.
+
+---
+
+## 3. IDENTIFICACIÓND DE RECURSOS ACTUALIZADA
+--------------------------------------------
+
+- **ICONOS NUEVOS**: `Network` (para ODF), `FileBarChart` (para Reportes), `LayoutGrid/List` (para cambio de vistas).
+- **LÓGICA DE IA**: El sistema está preparado para recibir instrucciones complejas en lenguaje natural para filtrar datos, aprovechando la infraestructura de AI Studio.
+
+---
+
+## 4. INSTRUCCIONES DE OPERACIÓN (NUEVAS FUNCIONES)
+--------------------------------------------------
+
+1. **Generar Nómina de Sobretiempos**:
+   - Ve a la pestaña **"Reportes"**.
+   - Selecciona (opcionalmente) los técnicos o el rango de fecha.
+   - Haz clic en **"Sobretiempos (Excel)"**. El archivo descargado tendrá una pestaña para cada trabajador involucrado.
+
+2. **Consultar Hilos de Fibra**:
+   - Ve a la pestaña **"ODF (Visual)"**.
+   - Selecciona la central deseada (ej: Central Maracay 4357).
+   - Haz clic en los cuadros numerados (hilos) para ver su distancia y estado técnico.
+
+3. **Modo Tabla**:
+   - En la pestaña **"Actividades"**, arriba a la derecha junto al botón de registro, usa el icono de lista para ver los datos compactos como en un archivo Excel de Drive.
+
+*instrucciones_3.txt documenta el cumplimiento técnico de los requerimientos extraídos de la entrevista personal realizada a la coordinación del departamento.*

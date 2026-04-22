@@ -1,0 +1,68 @@
+# MANUAL DE OPERACIÓN E INSTRUCCIONES TÉCNICAS - SISTEMA DE GESTIÓN CANTV (ACTUALIZACIÓN 1)
+========================================================================================
+
+Este documento es una actualización que incluye la funcionalidad de **Panel Lateral Desplegable (Colapsable)**.
+
+## 1. CAMBIOS EN ESTA VERSIÓN (MODIFICACIÓN 1)
+---------------------------------------------
+
+### Archivo: Layout.tsx
+- **Línea 12**: Se agregaron los iconos `ChevronLeft` y `ChevronRight` de `lucide-react`.
+- **Línea 15**: Se introdujo el estado `isCollapsed` (booleano).
+- **Líneas 26-40**: Se implementó un botón de palanca (Toggle) absoluto que permite al usuario contraer o expandir la barra lateral.
+- **Lógica de Ancho**: La barra lateral cambia de `w-64` (ancho completo) a `w-20` (iconos solamente) con una transición suave de 300ms.
+- **Tooltips (Información emergente)**: Cuando el panel está contraído, al pasar el ratón (hover) sobre un icono, aparece un pequeño cuadro negro con el nombre de la sección para facilitar la navegación rápida.
+
+---
+
+## 2. ESTRUCTURA COMPLETA DEL PROYECTO
+--------------------------------------
+
+### Carpeta /src/components:
+- `Login.tsx`: Maneja el acceso. Incluye validación de campos y estados animados.
+- `Layout.tsx`: Contenedor principal. Ahora con funcionalidad de ahorro de espacio (desplegable).
+- `Dashboard.tsx`: Analiza los datos de Firestore y los muestra en gráficas de `recharts`.
+- `ActivityCard.tsx`: Muestra detalles de incidentes, horas extra y viáticos.
+- `ActivityForm.tsx`: Formulario dinámico con cálculos de tiempo automáticos en el servidor/cliente.
+
+### Lógica de Conexión:
+1. `App.tsx` detecta si hay un usuario.
+2. Si lo hay, carga `Layout.tsx`.
+3. `Layout.tsx` recibe el `activeTab` para saber qué componente mostrar adentro (Dashboard, Actividades o Configuración).
+4. Todos los componentes consumen datos de `firebase.ts` que es el puente con la nube.
+
+---
+
+## 3. IDENTIFICACIÓND DE RECURSOS
+--------------------------------
+
+- **IMÁGENES**: `src/components/Login.tsx` -> Línea 35 (Fondo atmosférico).
+- **ICONOS**: `lucide-react`. Se importan al principio de cada archivo components.
+- **LOGO**: `src/components/Layout.tsx`. Se adapta automáticamente al tamaño del panel (colapsado o extendido).
+- **TEXTO**: Traducido íntegramente al español en todas las vistas.
+- **USUARIOS**: Firebase Firestore -> Colección `users`.
+- **SEGURIDAD**: Firebase Auth -> Maneja tokens de sesión y encriptación de claves.
+
+---
+
+## 4. GUÍA DE MODIFICACIÓN RÁPIDA
+--------------------------------
+
+- **¿Quieres cambiar un color?**: Ve a `tailwind.config.js` o `index.css` y cambia las variables `--color-brand-blue`.
+- **¿Quieres agregar un campo al formulario?**: 
+  1. Agrégalo al `interface Activity` en `types.ts`.
+  2. Agrégalo al estado inicial en `ActivityForm.tsx`.
+  3. Crea el `input` correspondiente en el JSX de `ActivityForm.tsx`.
+- **¿Quieres cambiar el límite de horas extra?**: En `ActivityForm.tsx`, busca la variable `standardHours = 8` y ajústala a tus necesidades.
+
+---
+
+## 5. OPERACIÓN EN GOOGLE AI STUDIO (PRIMERA VEZ)
+------------------------------------------------
+
+1. **Compilación**: El proyecto se reconstruye solo cada vez que guardas.
+2. **Base de Datos**: Para que funcione el guardado, el sistema ya está conectado a una instancia de Firestore del entorno. No necesitas configurar nada más.
+3. **Roles**: Para ser ADMIN, entra a `App.tsx` y añade tu correo a la lista `ADMIN_EMAILS`. 
+4. **Exportación**: Puedes descargar los datos en Excel o PDF usando el botón de la pestaña Actividades. El sistema usa librerías internas para procesar el archivo y descargarlo en tu navegador.
+
+*Este archivo instrucciones_1.txt captura la evolución del sistema tras añadir el panel desplegable solicitado.*

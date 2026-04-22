@@ -1,0 +1,97 @@
+========================================================================
+DOCUMENTACIÓN TÉCNICA Y MANUAL DE DESARROLLO - SISTEMA CANTV DTX 2026
+========================================================================
+Archivo: instrucción_10.txt
+Propósito: Explicación exhaustiva del código, arquitectura y personalización.
+Central: 4357 - Departamento de Datos y Transmisión
+
+------------------------------------------------------------------------
+1. ARQUITECTURA GENERAL DEL PROYECTO (FULL-STACK)
+------------------------------------------------------------------------
+El sistema ha sido escalado a una arquitectura Full-Stack (Backend + Frontend):
+- Backend: Servidor Express corriendo en Node.js (server.ts).
+- Frontend: React 18 con Vite integrado como middleware.
+- Base de Datos: Firebase (Firestore + Auth).
+
+Estructura de archivos:
+/
+ ├── server.ts          -> Servidor principal Express (Gestión de API y activos).
+ ├── package.json       -> Scripts de inicio (npm run dev activa el servidor).
+ └── /src               -> Código fuente del cliente (Componentes React).
+ ├── types.ts           -> Definiciones de tipos (Actividades, Técnicos, Usuarios).
+ ├── index.css          -> Estilos globales, variables de marca CANTV y scrollbars.
+ ├── App.tsx            -> Enrutador principal y gestor de estado global.
+ ├── components/        -> Módulos visuales reutilizables (Explicados abajo).
+ └── lib/utils.ts       -> Funciones de utilidad (ej. concatenación de clases Tailwind).
+
+------------------------------------------------------------------------
+2. DESGLOSE DE COMPONENTES (EL CORAZÓN DEL CÓDIGO)
+------------------------------------------------------------------------
+
+A. Layout.tsx (El Marco de la Aplicación)
+- Qué hace: Gestiona la barra lateral (Sidebar) y el despliegue del menú móvil.
+- Lógica de Usuario: Detecta si hay un usuario logueado para mostrar el contenido o redirigir al Login.
+- Detalle Técnico: Implementa el sistema de pestañas (Tabs) que cambia entre Dashboard, Registro Diario, etc. 
+- Modificable en: Variable 'navItems' para añadir/quitar secciones.
+
+B. Login.tsx (Seguridad de Acceso)
+- Qué hace: Pantalla de entrada con autenticación de Google.
+- Estética: Utiliza 'framer-motion' para las animaciones de entrada y un overlay de gradiente marca CANTV.
+- Imagen: La imagen de fondo se define en la línea <div className="absolute inset-0..."> utilizando Unsplash/CANTV.
+
+C. Dashboard.tsx (Panel de Control y Estadísticas)
+- Qué hace: Muestra el resumen ejecutivo (Total labores, ST, Viáticos).
+- Gráficos: Utiliza la librería 'recharts'. 
+- Lógica de Datos: Filtra las actividades del mes actual y las agrupa por 'Estado' y 'Tipo' para generar las gráficas de torta y barras.
+
+D. SmartSpreadsheet.tsx (El Registro Diario Inteligente)
+- Qué hace: Es la réplica digital de la "Planificación 2026".
+- Lógica de Tiempo: Calcula el día actual basado estrictamente en el horario de Maracay, Venezuela (UTC-4), bloqueando la edición de días futuros.
+- Vista Responsiva: Contiene un condicional para mostrar una <table> en PC y un mapeo de tarjetas (<ActivityCard>) en móviles.
+
+E. ActivityForm.tsx (El Formulario Técnico)
+- Qué hace: Ventana emergente (Modal) para registrar o editar una labor.
+- Cálculo de ST: Contiene una función lógica que resta la hora de entrada de la de salida y calcula automáticamente las horas extra si superan las 8 horas legales.
+- Selección de Personal: Muestra dinámicamente los técnicos activos registrados en el sistema.
+
+F. TechnicianManagement.tsx (Gestión de Personal)
+- Qué hace: CRUD (Crear, Leer, Actualizar, Borrar) de los técnicos.
+- Campos: ID de empleado (Carnet), Especialidad (DTX/DX) y Estado (Activo/Inactivo).
+
+G. ReportGenerator.tsx (Motor de Exportación Institucional)
+- Qué hace: Transforma los datos de Firebase en archivos Excel (.xlsx).
+- Lógica XML: Utiliza la librería 'xlsx' para crear hojas de cálculo con celdas combinadas (Merges).
+- Hojas: 
+  1. "Registro de Labores": Cuadrícula con 'x' por técnico.
+  2. "Control de Horarios": Detalle de entradas y salidas.
+  3. "Viáticos y Manejo": Resumen acumulado mensual.
+
+------------------------------------------------------------------------
+3. MANEJO DE IMÁGENES Y ESTÉTICA (BRANDING)
+------------------------------------------------------------------------
+- Imágenes de Fondo: Se manejan principalmente vía CSS en `src/index.css`.
+  - El fondo técnico global tiene una opacidad de 0.04 (4%) para no distraer.
+  - Se pueden cambiar las URLs en las propiedades `background-image` de `body` y `aside`.
+- Iconografía: Se utiliza 'lucide-react'. Para cambiar un icono, busca el nombre del icono en `lucide.dev` y reemplázalo en el código del componente.
+- Colores CANTV: Definidos en `@theme` dentro de `src/index.css`:
+  - Blue: #0056b3
+  - Red: #e30613
+
+------------------------------------------------------------------------
+4. ¿CÓMO MODIFICAR CADA COSA? (GUÍA RÁPIDA)
+------------------------------------------------------------------------
+- Cambiar Horario Central: En `ActivityForm.tsx`, modifica `standardHours = 8`.
+- Añadir un Nuevo Tipo de Actividad: Ve a `src/types.ts`, busca `ActivityType` y añade tu nuevo tipo (ej. 'fibra'). Luego actualiza los selectores en el formulario.
+- Ajustar el Scrollbar: En `src/index.css`, busca la clase `.sidebar-scrollbar`. Ahí puedes cambiar `width` para el grosor o `bg-brand-blue` para el color.
+- Modificar Exportación Excel: Ve a `ReportGenerator.tsx`, función `generateSobretiempoExcel`. Puedes añadir nuevas columnas al array `headerRow1` o `registroData`.
+
+------------------------------------------------------------------------
+5. BASE DE DATOS (FIREBASE)
+------------------------------------------------------------------------
+- Colecciones principales:
+  - `activities`: Almacena cada labor técnica vinculada a un técnico y fecha.
+  - `technicians`: Almacena el padrón de trabajadores calificados.
+  - `users`: Perfiles de acceso (Admin, Supervisor, Técnico).
+
+Este sistema ha sido diseñado para ser robusto, escalable y, sobre todo, fiel a la normativa técnica de CANTV Central 4357.
+========================================================================

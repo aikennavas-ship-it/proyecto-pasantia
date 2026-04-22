@@ -1,0 +1,55 @@
+# MANUAL DE OPERACIÓN E INSTRUCCIONES TÉCNICAS - SISTEMA DE GESTIÓN CANTV (ACTUALIZACIÓN 2)
+========================================================================================
+
+Esta versión alinea el sistema completamente con los requerimientos de la tesis/proyecto (UNEFA), añadiendo el módulo de Gestión de Personal y el Marco Institucional.
+
+## 1. NUEVAS FUNCIONALIDADES (MODIFICACIÓN 2)
+--------------------------------------------
+
+### Módulo: Personal Técnico (`TechnicianManagement.tsx`)
+- **Gestión CRUD**: Ahora el administrador puede registrar formalmente a cada técnico (Nombre, Carnet/ID, Especialidad).
+- **Integración**: Este módulo centraliza al personal, evitando escribir nombres manualmente cada vez y reduciendo errores humanos de transcripción (problema detectado en el Cap. II).
+
+### Formulario Técnico Avanzado (`ActivityForm.tsx`)
+- **Sincronización**: El formulario ahora permite SELECCIONAR a los técnicos de una lista oficial.
+- **Participantes Múltiples**: Permite registrar cuadrillas completas por labor, lo cual es crítico para el cálculo mensual de beneficios por persona.
+- **Validación**: No permite guardar actividades sin participantes asignados.
+
+### Panel de Configuración e Información (`App.tsx`)
+- **Marco Institucional**: Se integró la Misión, Visión y Valores de CANTV extraídos directamente de tu informe (Cap. I).
+- **Ubicación**: Se añadió la georreferencia de la Central 4357 de Maracay.
+- **Perfil de Auditoría**: Estructura lista para futuras implementaciones de logs de cambios.
+
+---
+
+## 2. RELACIÓN ENTRE ARCHIVOS ACTUALIZADA
+-----------------------------------------
+
+### El Flujo de Datos:
+1. El Administrador registra técnicos en la pestaña **"Personal"**.
+2. Estos datos se guardan en la colección `technicians` de Firestore.
+3. Al crear una **"Nueva Actividad"**, el sistema consulta esa colección para mostrarte a quién puedes asignar.
+4. Al exportar a **Excel/PDF**, el sistema cruza los incidentes con los tiempos y viáticos para generar el reporte de nómina.
+
+---
+
+## 3. ¿DÓNDE ESTÁ CADA COSA? (REQUERIMIENTO USUARIO)
+--------------------------------------------------
+
+- **Usuarios/Contraseñas**: Protegidos por Firebase Auth (Encriptado).
+- **Datos Técnicos**: Colección `activities`.
+- **Datos de Empleados**: Colección `technicians`.
+- **Lógica de Sobretiempo**: `src/components/ActivityForm.tsx` (calcula la diferencia entre Hora Inicio y Hora Fin si supera las 8 horas).
+- **Lógica de Viáticos**: `src/components/ActivityForm.tsx` (activa el campo de monto si el checkbox está marcado).
+- **Logos/Estética**: CSS personalizado en `tailwind.config.js` enfocado en los colores institucionales (Azul/Rojo CANTV).
+
+---
+
+## 4. IMPACTO DE LAS MODIFICACIONES
+-----------------------------------
+
+- **Si borras un técnico**: Seguirá apareciendo en las actividades antiguas, pero ya no podrás seleccionarlo para nuevas labores.
+- **Si cambias la Misión/Visión**: Solo afecta visualmente a la sección de "Información" en Configuración.
+- **Si modificas `standardHours`**: Alterarás el cálculo administrativo de todas las nuevas horas extra que se registren.
+
+*Este archivo instrucciones_2.txt documenta la transformación del frontend en una herramienta de gestión administrativa robusta y alineada con los estándares de ingeniería de software de la UNEFA.*

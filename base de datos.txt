@@ -1,0 +1,53 @@
+========================================================================
+GUÍA DE ACCESO A LA BASE DE DATOS FIRESTORE - CANTV DTX 2026
+========================================================================
+Archivo: base de datos.txt
+Proyecto: gen-lang-client-0743736582
+Base de Datos ID: ai-studio-7b0d9466-7bcd-4162-8ef6-9ffc62ce9d88
+
+Para acceder, visualizar y gestionar los datos crudos (técnicos, actividades, usuarios) de tu aplicación, sigue estos pasos detallados:
+
+------------------------------------------------------------------------
+PASO 1: ACCESO AL CONSOLA DE FIREBASE
+------------------------------------------------------------------------
+1. Abre tu navegador y ve a: https://console.firebase.google.com/
+2. Inicia sesión con la misma cuenta de Google que usas en Google AI Studio (aikennavas@gmail.com).
+
+------------------------------------------------------------------------
+PASO 2: SELECCIÓN DEL PROYECTO
+------------------------------------------------------------------------
+1. En el panel principal de Firebase, busca el proyecto con ID:
+   "gen-lang-client-0743736582"
+2. Haz clic sobre él para entrar al panel de control del proyecto.
+
+------------------------------------------------------------------------
+PASO 3: ENTRAR A CLOUD FIRESTORE
+------------------------------------------------------------------------
+1. En el menú lateral izquierdo, busca la sección "Compilación" (o "Build") y haz clic en "Firestore Database".
+2. Verás una pestaña que dice "Datos".
+
+------------------------------------------------------------------------
+PASO 4: SELECCIÓN DE LA BASE DE DATOS ESPECÍFICA
+------------------------------------------------------------------------
+Tu aplicación utiliza una base de datos con un ID específico. 
+1. En la parte superior de la página de Firestore, verás un selector de base de datos (por defecto dice "(default)").
+2. Haz clic en el selector y elige la base de datos:
+   "ai-studio-7b0d9466-7bcd-4162-8ef6-9ffc62ce9d88"
+
+------------------------------------------------------------------------
+PASO 5: EXPLORACIÓN DE COLECCIONES
+------------------------------------------------------------------------
+Una vez dentro, verás tres columnas:
+1. COLECCIONES: Aquí verás 'activities', 'technicians' y 'users'.
+2. DOCUMENTOS: Al hacer clic en una colección, verás los IDs de cada registro.
+3. DATOS: Al hacer clic en un documento, verás los campos (título, fecha, nombre, etc.) y podrás editarlos manualmente si lo necesitas.
+
+------------------------------------------------------------------------
+NOTAS DE SEGURIDAD
+------------------------------------------------------------------------
+- Autenticación: Puedes ver quién ha iniciado sesión en la sección "Authentication" del menú lateral.
+- Reglas: En la pestaña "Rules" de Firestore puedes ver las reglas de seguridad que impiden que personas no autorizadas lean o escriban tus datos. No las modifiques a menos que sea estrictamente necesario.
+
+URL DIRECTA PARA ACCESO RÁPIDO:
+https://console.firebase.google.com/project/gen-lang-client-0743736582/firestore/databases/ai-studio-7b0d9466-7bcd-4162-8ef6-9ffc62ce9d88/data
+========================================================================

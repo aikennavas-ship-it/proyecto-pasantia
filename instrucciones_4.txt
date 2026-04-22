@@ -1,0 +1,43 @@
+# MANUAL DE IDENTIDAD VISUAL Y ESTILO CORPORATIVO - SISTEMA CANTV (MODALIDAD INSTITUCIONAL)
+======================================================================================================
+
+Esta versión transforma la interfaz genérica en una plataforma de grado corporativo con la identidad visual oficial de CANTV.
+
+## 1. PALETA DE COLORES CORPORATIVA
+-----------------------------------
+
+- **Azul CANTV (Primario)**: `#004a99`. Utilizado en barras laterales, botones de acción principal y encabezados.
+- **Rojo CANTV (Acento)**: `#e30613`. Reservado para incidentes críticos, botones de salida y notificaciones de alerta.
+- **Slate Tech (Estructura)**: `#f8fafc`. Un tono gris-azulado muy claro para fondos que reduce la fatiga visual.
+
+## 2. TIPOGRAFÍA Y JERARQUÍA
+---------------------------
+
+- **Fuente Display (Outfit)**: Utilizada para títulos grandes, números de métricas y logotipos. Transmite modernidad y precisión técnica.
+- **Fuente Sans (Inter)**: La fuente estándar para todo el cuerpo del texto por su altísima legibilidad en pantallas.
+- **Fuente Mono (JetBrains Mono)**: Utilizada exclusivamente para números de incidentes, horarios e identificadores de fibra, reforzando el carácter técnico del sistema.
+
+## 3. COMPONENTES REDISEÑADOS
+-----------------------------
+
+### Login de Alto Impacto
+- Se eliminaron los colores naranja. Ahora predomina el azul institucional.
+- Fondo dinámico con desenfoque (backdrop-blur) y tarjetas de cristal (glassmorphism).
+
+### Dashboard de Mando
+- Las tarjetas de estadísticas pasaron de ser simples recuadros a widgets con jerarquía visual (fuente Outfit en tamaño grande).
+- Los gráficos ahora usan la paleta de colores oficial.
+
+### Tarjetas de Actividad V2
+- Diseño más denso: Se prioriza la información técnica. 
+- Los incidentes se resaltan con etiquetas rojas para visibilidad inmediata.
+
+---
+
+## 4. UBICACIÓN DE ESTILOS
+--------------------------
+
+- Todo el tema se centraliza en `src/index.css` utilizando Tailwind v4 `@theme`.
+- Los componentes reutilizan las clases `.glass-card`, `.btn-primary` y `.stat-label`.
+
+*instrucciones_4.txt documenta la transición estética hacia una identidad institucional sólida, alineada con la misión de CANTV.*

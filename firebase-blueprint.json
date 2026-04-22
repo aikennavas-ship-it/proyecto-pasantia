@@ -1,0 +1,92 @@
+{
+  "entities": {
+    "Activity": {
+      "title": "Actividad",
+      "description": "Labores diarias registradas en el sistema.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "incidentNumber": { "type": "string" },
+        "fleet": { "type": "string" },
+        "type": { "type": "string", "enum": ["provisión", "transmisión", "datos", "otro"] },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "overtimeHours": { "type": "number" },
+        "hasPerDiem": { "type": "boolean" },
+        "perDiemAmount": { "type": "number" },
+        "technicianId": { "type": "string" },
+        "technicianName": { "type": "string" },
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "date": { "type": "object" },
+        "createdAt": { "type": "object" },
+        "notes": { "type": "array", "items": { "type": "string" } },
+        "isDeleted": { "type": "boolean" },
+        "deletedAt": { "type": "object" }
+      },
+      "required": ["title", "description", "type", "hasPerDiem", "technicianId", "technicianName", "date", "createdAt"]
+    },
+    "UserProfile": {
+      "title": "Perfil de Usuario",
+      "description": "Información del usuario.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "supervisor", "tecnico"] },
+        "department": { "type": "string" },
+        "createdAt": { "type": "object" }
+      },
+      "required": ["uid", "email", "displayName", "role", "createdAt"]
+    },
+    "Technician": {
+      "title": "Técnico",
+      "description": "Información del técnico.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "specialty": { "type": "string" },
+        "status": { "type": "string", "enum": ["activo", "inactivo"] },
+        "createdAt": { "type": "object" },
+        "isDeleted": { "type": "boolean" },
+        "deletedAt": { "type": "object" }
+      },
+      "required": ["name", "employeeId", "specialty", "status", "createdAt"]
+    },
+    "Notification": {
+      "title": "Notificación",
+      "description": "Log de notificaciones enviadas a usuarios.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "type": { "type": "string" },
+        "message": { "type": "string" },
+        "relatedId": { "type": "string" },
+        "createdAt": { "type": "object" },
+        "readBy": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["userId", "userName", "type", "message", "createdAt", "readBy"]
+    }
+  },
+  "firestore": {
+    "/activities/{activityId}": {
+      "schema": "Activity",
+      "description": "Diario de actividades."
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Perfiles de usuarios."
+    },
+    "/technicians/{techId}": {
+      "schema": "Technician",
+      "description": "Personal técnico registrado."
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Logs de eventos en el sistema."
+    }
+  }
+}

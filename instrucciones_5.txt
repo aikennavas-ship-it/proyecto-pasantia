@@ -1,0 +1,34 @@
+# MANUAL DE OPERACIÓN - SISTEMA DE GESTIÓN DE DATOS Y TRANSMISIÓN CANTV (V5)
+======================================================================================================
+
+Este sistema ha sido refinado exclusivamente para el proyecto de "Gestión Automatizada para el Registro de Actividades Diarias, Control de Sobretiempos y Viáticos". Se han eliminado todas las funciones ajenas (como ODF) para centrar la herramienta en la eficiencia administrativa.
+
+## 1. REGISTRO DIARIO INTELIGENTE (ESTILO EXCEL)
+-----------------------------------------------
+
+La pestaña "Actividades" ahora funciona como una hoja de cálculo interactiva:
+- **Reseteo Automático**: Cada día a las 12:00 AM, el sistema presenta una "planilla vacía" para el nuevo día, evitando que el administrador deba borrar datos manuales.
+- **Navegación Dinámica**: Puede usar las flechas laterales para navegar entre días anteriores o futuros. Si un día no tiene registros, el sistema muestra la planilla lista para ser llenada.
+- **Entrada Rápida**: Al hacer clic en "Nueva Entrada", el formulario se pre-carga con la fecha que está visualizando actualmente.
+
+## 2. HISTORIAL MENSUAL Y ANUAL
+-------------------------------
+
+En la pestaña "Reportes", se ha implementado un sistema de archivo histórico:
+- **Agrupación**: Los reportes se dividen automáticamente por Año y Mes.
+- **Libro de Actividades**: Al seleccionar un mes, verá un calendario de "Hojas Diarias". Los días con registros aparecen resaltados.
+- **Exportación Microsoft Excel**: Todos los reportes se exportan en formato `.xlsx` optimizado, con hojas separadas por técnico si el reporte es consolidado.
+
+## 3. IDENTIDAD INSTITUCIONAL
+------------------------------
+
+- **Microsoft Excel**: Se ha estandarizado la nomenclatura para alinearse con las herramientas oficiales de Microsoft.
+- **Central 4357**: Toda la metadata y encabezados reflejan la ubicación y el departamento específico solicitado.
+
+## 4. SOPORTE TÉCNICO Y ACCESO
+------------------------------
+
+- **Base de Datos**: Los datos se almacenan en tiempo real en **Google Firebase Firestore**. 
+- **Privilegios**: Solo los correos autorizados en `App.tsx` (como el suyo) tienen permisos de escritura. Los nuevos usuarios quedan en modo "Acceso Restringido" hasta que usted los valide.
+
+*instrucciones_5.txt documenta la consolidación final del sistema como un Excel Inteligente para el Departamento de Datos y Transmisión.*
