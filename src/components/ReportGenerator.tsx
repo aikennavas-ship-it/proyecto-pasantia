@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, FileText, Table, Users, Filter, Calendar, ChevronRight, Archive, History } from 'lucide-react';
+import { Download, FileText, Table, Users, Filter, Calendar, ChevronRight, Archive, History, X, Clock, MapPin, Wrench } from 'lucide-react';
 import { Activity, Technician } from '../types';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -17,6 +17,9 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
   const [selectedYear, setSelectedYear] = React.useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = React.useState(new Date().getMonth());
   const [viewMode, setViewMode] = React.useState<'summary' | 'history'>('summary');
+  
+  // State for the modal
+  const [selectedDayActivities, setSelectedDayActivities] = React.useState<{ date: Date, activities: Activity[] } | null>(null);
 
   const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
   const months = [
@@ -305,7 +308,10 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
                 const dayActs = filteredActivities.filter(a => a.date.toDate().getDate() === day);
                 
                 return (
-                  <div key={day} className={cn(
+                  <div 
+                    key={day} 
+                    onClick={() => dayActs.length > 0 && setSelectedDayActivities({ date: d, activities: dayActs })}
+                    className={cn(
                     "p-4 rounded-2xl border transition-all flex items-center justify-between group",
                     dayActs.length > 0 
                       ? "bg-white border-slate-100 hover:border-brand-blue shadow-sm hover:shadow-md cursor-pointer" 
@@ -344,6 +350,109 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
           </div>
         </div>
       </div>
+
+      {/* Day Details Modal */}
+      {selectedDayActivities && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setSelectedDayActivities(null)} />
+          <div className="bg-white rounded-[2rem] w-full max-w-4xl max-h-[85vh] xl:max-h-[80vh] overflow-hidden flex flex-col relative shadow-2xl animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between sticky top-0 z-10">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm border border-slate-100">
+                  <span className="font-display font-black text-brand-blue text-lg">{format(selectedDayActivities.date, 'dd')}</span>
+                </div>
+                <div>
+                  <h3 className="font-display font-black text-slate-900 tracking-tight text-lg capitalize">
+                    {format(selectedDayActivities.date, "eeee, dd 'de' MMMM", { locale: es })}
+                  </h3>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="bg-brand-blue/10 text-brand-blue font-black uppercase tracking-widest text-[9px] px-2 py-0.5 rounded-full">
+                      {selectedDayActivities.activities.length} Actividades registradas
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button 
+                onClick={() => setSelectedDayActivities(null)}
+                className="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 hover:border-red-100 transition-all"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* List */}
+            <div className="p-6 overflow-y-auto custom-scrollbar bg-slate-50/30 flex-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {selectedDayActivities.activities.map((activity) => (
+                  <div key={activity.id} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-2 h-full bg-brand-blue/10 group-hover:bg-brand-blue transition-colors" />
+                    
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="space-y-1">
+                        <span className="font-mono text-[10px] font-black text-brand-blue bg-brand-blue/5 px-2 py-1 rounded">
+                          {activity.incidentNumber || 'S/N'}
+                        </span>
+                        <h4 className="font-bold text-slate-900 leading-tight pr-6">{activity.title}</h4>
+                      </div>
+                    </div>
+                    
+                    <p className="text-xs text-slate-500 line-clamp-2 mb-4 pr-4">{activity.description}</p>
+                    
+                    <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs">
+                      <div className="flex items-start gap-2">
+                        <Clock size={14} className="text-slate-400 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold text-slate-700">{activity.startTime || '--:--'} a {activity.endTime || '--:--'}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Horario</p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-start gap-2">
+                        <Wrench size={14} className="text-slate-400 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold text-slate-700 capitalize">{activity.type}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Tipo</p>
+                        </div>
+                      </div>
+
+                      <div className="col-span-2 pt-3 border-t border-slate-100 mt-1">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap gap-1">
+                            {activity.participants?.map((p, pIdx) => (
+                              <span key={`${activity.id}-p-${pIdx}`} className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md italic">
+                                {p.split(' ')[0]}
+                              </span>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {(activity.overtimeHours || 0) !== 0 && (
+                              <span className={cn(
+                                "text-[10px] font-black px-2 py-0.5 rounded border border-transparent",
+                                (activity.overtimeHours || 0) > 0 
+                                  ? "bg-emerald-50 text-emerald-600 border-emerald-100" 
+                                  : "bg-red-50 text-red-600 border-red-100"
+                              )}>
+                                {(activity.overtimeHours || 0) > 0 ? '+' : ''}{(activity.overtimeHours || 0).toFixed(2)}h
+                              </span>
+                            )}
+                            {activity.hasPerDiem && (
+                              <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                                ${activity.perDiemAmount}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

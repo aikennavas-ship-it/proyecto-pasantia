@@ -6,7 +6,7 @@ import TechnicianForm from './TechnicianForm';
 
 interface TechnicianManagementProps {
   technicians: Technician[];
-  onAddTechnician: (data: any) => void;
+  onAddTechnician?: (data: any) => void;
   onEditTechnician?: (tech: Technician) => void;
   onDeleteTechnician?: (id: string, name: string) => void;
   isLoading: boolean;
@@ -33,13 +33,15 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
             <p className="text-xs text-slate-500 font-medium">Gestión administrativa de Datos y Transmisión</p>
           </div>
         </div>
-        <button 
-          onClick={() => setIsFormOpen(true)}
-          className="btn-primary"
-        >
-          <UserPlus size={18} />
-          <span>Registrar Técnico</span>
-        </button>
+        {onAddTechnician && (
+          <button 
+            onClick={() => setIsFormOpen(true)}
+            className="btn-primary"
+          >
+            <UserPlus size={18} />
+            <span>Registrar Técnico</span>
+          </button>
+        )}
       </div>
 
       <div className="glass-card overflow-hidden">

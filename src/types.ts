@@ -1,7 +1,6 @@
 import { Timestamp } from 'firebase/firestore';
 
 export type ActivityType = 'provisión' | 'transmisión' | 'datos' | 'otro';
-export type ActivityStatus = 'pendiente' | 'en curso' | 'completado';
 
 export interface Activity {
   id: string;
@@ -10,7 +9,6 @@ export interface Activity {
   incidentNumber?: string;
   fleet?: string;
   type: ActivityType;
-  status?: ActivityStatus;
   startTime?: string;
   endTime?: string;
   overtimeHours?: number;

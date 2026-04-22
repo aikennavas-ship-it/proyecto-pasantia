@@ -13,9 +13,9 @@ const COLORS = ['#004a99', '#e30613', '#64748b', '#1e293b'];
 export default function Dashboard({ activities }: DashboardProps) {
   const stats = {
     total: activities.length,
-    totalOvertime: activities.reduce((acc, a) => acc + (a.overtimeHours || 0), 0),
+    totalOvertime: activities.reduce((acc, a) => acc + (a.overtimeHours && a.overtimeHours > 0 ? a.overtimeHours : 0), 0),
     totalPerDiem: activities.filter(a => a.hasPerDiem).length,
-    alerts: activities.filter(a => a.status === 'pendiente').length, // Count pending as alerts
+    alerts: 0, // State logic removed
   };
 
   const typeData = [
@@ -24,14 +24,6 @@ export default function Dashboard({ activities }: DashboardProps) {
     { name: 'Transmisión', value: activities.filter(a => a.type === 'transmisión').length },
     { name: 'Otro', value: activities.filter(a => a.type === 'otro').length },
   ].filter(d => d.value > 0);
-
-  const statusData = [
-    { name: 'Pendiente', value: activities.filter(a => a.status === 'pendiente').length },
-    { name: 'En Curso', value: activities.filter(a => a.status === 'en curso').length },
-    { name: 'Completado', value: activities.filter(a => a.status === 'completado').length },
-  ].filter(d => d.value > 0);
-
-  const STATUS_COLORS = ['#004a99', '#e30613', '#64748b'];
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
@@ -55,7 +47,7 @@ export default function Dashboard({ activities }: DashboardProps) {
         <StatCard title="Alertas" value={stats.alerts} icon={AlertTriangle} color="text-brand-red" bg="bg-brand-red/5" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6">
         {/* Type Distribution */}
         <div className="glass-card p-6">
           <h3 className="text-lg font-bold text-slate-900 mb-6">Distribución por Tipo</h3>
@@ -69,42 +61,9 @@ export default function Dashboard({ activities }: DashboardProps) {
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                   cursor={{ fill: '#f8fafc' }}
                 />
-                <Bar dataKey="value" fill="#004a99" radius={[4, 4, 0, 0]} barSize={40} />
+                <Bar dataKey="value" fill="#004a99" radius={[4, 4, 0, 0]} barSize={80} />
               </BarChart>
             </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Status Distribution (Pie Chart) */}
-        <div className="glass-card p-6">
-          <h3 className="text-lg font-bold text-slate-900 mb-6">Estado de Actividades</h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={statusData}
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {statusData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={STATUS_COLORS[index % STATUS_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="flex justify-center gap-4 mt-2">
-              {statusData.map((d, i) => (
-                <div key={d.name} className="flex items-center gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: STATUS_COLORS[i % STATUS_COLORS.length] }} />
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{d.name}</span>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       </div>
@@ -114,16 +73,16 @@ export default function Dashboard({ activities }: DashboardProps) {
 
 function StatCard({ title, value, icon: Icon, color, bg }: any) {
   return (
-    <div className="glass-card p-6 flex flex-col gap-4 relative overflow-hidden group hover:scale-[1.02]">
-      <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center transition-all group-hover:scale-110 shadow-sm", bg, color)}>
-        <Icon size={24} />
+    <div className="glass-card p-6 flex flex-col items-center justify-center text-center gap-3 relative overflow-hidden group hover:scale-[1.02] border-t-4 border-t-transparent hover:border-t-brand-blue">
+      <div className={cn("w-14 h-14 rounded-2xl flex items-center justify-center transition-all group-hover:-translate-y-1 shadow-sm", bg, color)}>
+        <Icon size={28} />
       </div>
-      <div>
-        <p className="stat-label mb-1">{title}</p>
-        <p className="text-3xl font-display font-black text-slate-900">{value}</p>
+      <div className="mt-2">
+        <p className="text-4xl font-display font-black text-slate-900 leading-none tracking-tight">{value}</p>
+        <p className="stat-label mt-2 text-xs">{title}</p>
       </div>
       {/* Decorative pulse element */}
-      <div className={cn("absolute -right-4 -bottom-4 w-24 h-24 rounded-full opacity-5 group-hover:opacity-10 transition-opacity", bg)} />
+      <div className={cn("absolute -right-4 -bottom-4 w-24 h-24 rounded-full opacity-5 group-hover:scale-150 transition-all duration-500", bg)} />
     </div>
   );
 }

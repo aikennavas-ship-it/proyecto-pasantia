@@ -74,33 +74,46 @@
   }
 
   .custom-scrollbar::-webkit-scrollbar {
-    width: 5px;
+    width: 10px;
+    height: 10px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-track {
-    @apply bg-slate-100/50 rounded-full;
+    @apply bg-slate-100 rounded-lg border-l border-slate-200;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    @apply bg-slate-300 rounded-full hover:bg-brand-blue/50 transition-colors border-2 border-transparent bg-clip-padding;
+    @apply bg-slate-400/80 rounded-lg hover:bg-slate-500 transition-colors border-[2px] border-slate-100 bg-clip-padding;
   }
 
   /* Specific sidebar scrollbar to be more visible regardless of OS defaults */
   .sidebar-scrollbar::-webkit-scrollbar {
-    width: 6px; 
+    width: 10px; 
+    height: 10px;
   }
   
   .sidebar-scrollbar::-webkit-scrollbar:horizontal {
-    height: 0;
-    display: none;
+    height: 10px;
   }
   
   .sidebar-scrollbar::-webkit-scrollbar-track {
-    @apply bg-transparent;
+    @apply bg-brand-blue/5 rounded-lg border-l border-brand-blue/10;
   }
   
   .sidebar-scrollbar::-webkit-scrollbar-thumb {
-    @apply bg-brand-blue/30 rounded-full hover:bg-brand-blue/50 border-2 border-transparent bg-clip-padding;
+    @apply bg-brand-blue/40 rounded-lg hover:bg-brand-blue/60 border-[2px] border-[#004a99]/5 bg-clip-padding;
   }
+}
+
+@keyframes swing {
+  20% { transform: rotate3d(0, 0, 1, 15deg); }
+  40% { transform: rotate3d(0, 0, 1, -10deg); }
+  60% { transform: rotate3d(0, 0, 1, 5deg); }
+  80% { transform: rotate3d(0, 0, 1, -5deg); }
+  to { transform: rotate3d(0, 0, 1, 0deg); }
+}
+
+.animate-swing {
+  animation: swing 1s ease-in-out infinite alternate;
 }
 

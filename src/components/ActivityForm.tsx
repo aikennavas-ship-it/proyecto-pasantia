@@ -18,12 +18,11 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
     incidentNumber: initialData?.incidentNumber || '',
     fleet: initialData?.fleet || '',
     type: initialData?.type || 'datos',
-    status: initialData?.status || 'pendiente',
     technicianName: initialData?.technicianName || '',
-    startTime: initialData?.startTime || '',
-    endTime: initialData?.endTime || '',
+    startTime: initialData?.startTime || '08:00',
+    endTime: initialData?.endTime || '16:00',
     hasPerDiem: initialData?.hasPerDiem || false,
-    perDiemAmount: initialData?.perDiemAmount || 0,
+    perDiemAmount: initialData?.perDiemAmount?.toString() || '',
     participants: initialData?.participants || [] as string[],
     date: initialData?.date ? initialData.date.toDate() : (initialDate || new Date()),
   });
@@ -51,14 +50,22 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
       let diff = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
       if (diff < 0) diff += 24; // Handle shift crossing midnight
       
-      const standardHours = 8;
-      if (diff > standardHours) {
-        overtimeHours = Number((diff - standardHours).toFixed(2));
+      const STANDARD_HOURS = 8;
+      let rawOvertime = diff - STANDARD_HOURS;
+      
+      // Umbral de tolerancia de 15 minutos (0.25 horas) para evitar registrar sobretiempo/deficit minúsculo
+      const GRACE_PERIOD = 15 / 60; 
+      
+      if (Math.abs(rawOvertime) <= GRACE_PERIOD) {
+        overtimeHours = 0;
+      } else {
+        overtimeHours = Number(rawOvertime.toFixed(2));
       }
     }
 
     onSubmit({
       ...formData,
+      perDiemAmount: formData.perDiemAmount ? Number(formData.perDiemAmount) : 0,
       overtimeHours,
       technicianName: formData.participants[0] || 'Sin asignar', // Primario
     });
@@ -137,7 +144,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
             />
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Tipo</label>
               <select className="input-field" value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value as any })}>
@@ -145,14 +152,6 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
                 <option value="provisión">Provisión</option>
                 <option value="transmisión">Transmisión</option>
                 <option value="otro">Otro</option>
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Estado</label>
-              <select className="input-field" value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as any })}>
-                <option value="pendiente">Pendiente</option>
-                <option value="en curso">En Curso</option>
-                <option value="completado">Completado</option>
               </select>
             </div>
             <div className="space-y-1">
@@ -184,7 +183,12 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
                     className="input-field h-10 text-sm font-bold"
                     placeholder="0.00"
                     value={formData.perDiemAmount}
-                    onChange={e => setFormData({ ...formData, perDiemAmount: Number(e.target.value) })}
+                    onChange={e => {
+                      const val = e.target.value;
+                      // Remove leading zeros formatting issue
+                      const cleanedVal = val.replace(/^0+/, '') || (val === '0' ? '0' : '');
+                      setFormData({ ...formData, perDiemAmount: cleanedVal });
+                    }}
                   />
                 </div>
               )}

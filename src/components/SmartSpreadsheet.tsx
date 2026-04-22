@@ -9,7 +9,7 @@ import * as XLSX from 'xlsx';
 interface SmartSpreadsheetProps {
   activities: Activity[];
   technicians: Technician[];
-  onAddActivity: () => void;
+  onAddActivity?: () => void;
   selectedDate: Date;
   onDateChange: (date: Date) => void;
   onEdit?: (activity: Activity) => void;
@@ -199,13 +199,15 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
           </div>
 
           <div className="flex gap-2 ml-auto">
-            <button 
-              onClick={onAddActivity}
-              className="px-6 py-2.5 bg-brand-blue text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-brand-blue/20 hover:bg-brand-blue-dark active:scale-[0.98] transition-all flex items-center gap-2"
-            >
-              <Plus size={16} />
-              <span>Nueva Entrada</span>
-            </button>
+            {onAddActivity && (
+              <button 
+                onClick={onAddActivity}
+                className="px-6 py-2.5 bg-brand-blue text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-brand-blue/20 hover:bg-brand-blue-dark active:scale-[0.98] transition-all flex items-center gap-2"
+              >
+                <Plus size={16} />
+                <span>Nueva Entrada</span>
+              </button>
+            )}
             <button 
               onClick={exportDayToExcel}
               className="px-6 py-2.5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 active:scale-[0.98] transition-all flex items-center gap-2"
@@ -252,13 +254,8 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                     Técnicos <SortIcon columnKey="participantsCount" />
                   </div>
                 </th>
-                <th 
-                  onClick={() => handleSort('overtimeHours')}
-                  className="px-6 py-4 border-r border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center cursor-pointer hover:bg-slate-100 transition-colors group"
-                >
-                  <div className="flex items-center justify-center gap-2">
-                    Horas ST <SortIcon columnKey="overtimeHours" />
-                  </div>
+                <th className="px-6 py-4 border-r border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center min-w-[200px]">
+                  Horario (Ejecución y ST)
                 </th>
                 <th 
                   onClick={() => handleSort('perDiem')}
@@ -302,14 +299,34 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                         )) || <span className="text-[10px] text-slate-300">N/A</span>}
                       </div>
                     </td>
-                    <td className="px-6 py-4 border-r border-slate-50 text-center">
-                      {(activity.overtimeHours || 0) > 0 ? (
-                        <span className="text-xs font-black text-orange-600 bg-orange-50 px-2 py-1 rounded-full">
-                          {activity.overtimeHours}h
-                        </span>
-                      ) : (
-                        <span className="text-slate-300 text-xs">—</span>
-                      )}
+                    <td className="px-6 py-4 border-r border-slate-50">
+                      <div className="flex items-center justify-center gap-4">
+                        <div className="flex flex-col items-end">
+                          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Entrada</span>
+                          <span className="text-sm font-mono font-black text-slate-700">{activity.startTime || '--:--'}</span>
+                        </div>
+                        <div className="h-6 w-px bg-slate-200"></div>
+                        <div className="flex flex-col items-start">
+                          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Salida</span>
+                          <span className="text-sm font-mono font-black text-slate-700">{activity.endTime || '--:--'}</span>
+                        </div>
+                        
+                        {(activity.overtimeHours || 0) !== 0 && (
+                          <div className={cn("ml-2 pl-3 border-l-2 flex flex-col items-center", (activity.overtimeHours || 0) > 0 ? "border-emerald-100" : "border-red-100")}>
+                            <span className={cn("text-[9px] font-bold uppercase tracking-wider leading-none mb-1", (activity.overtimeHours || 0) > 0 ? "text-emerald-500" : "text-red-500")}>
+                              {(activity.overtimeHours || 0) > 0 ? "Sobretiempo" : "Déficit"}
+                            </span>
+                            <span className={cn(
+                              "text-[11px] font-black px-2 py-0.5 rounded-full border shadow-sm leading-none",
+                              (activity.overtimeHours || 0) > 0 
+                                ? "text-emerald-600 bg-emerald-50 border-emerald-100" 
+                                : "text-red-600 bg-red-50 border-red-100"
+                            )}>
+                              {(activity.overtimeHours || 0) > 0 ? '+' : ''}{(activity.overtimeHours || 0).toFixed(2)}h
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 border-r border-slate-50 text-center">
                       {activity.hasPerDiem ? (
@@ -402,9 +419,21 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                   <div className="text-right">
                     <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">ST / Viático</p>
                     <div className="flex items-center justify-end gap-2">
-                       <span className={cn("text-[9px] font-black px-1.5 py-0.5 rounded", (activity.overtimeHours || 0) > 0 ? "bg-orange-50 text-orange-600" : "text-slate-300")}>
-                        {activity.overtimeHours || 0}h
+                      <span className="text-[9px] font-mono text-slate-500 font-bold bg-white px-1.5 py-0.5 rounded border border-slate-100">
+                        {activity.startTime || '-'} a {activity.endTime || '-'}
                       </span>
+                      {(activity.overtimeHours || 0) !== 0 ? (
+                        <span className={cn(
+                          "text-[9px] font-black px-1.5 py-0.5 rounded border", 
+                          (activity.overtimeHours || 0) > 0 
+                            ? "bg-emerald-50 text-emerald-600 border-emerald-100" 
+                            : "bg-red-50 text-red-600 border-red-100"
+                        )}>
+                          {(activity.overtimeHours || 0) > 0 ? '+' : ''}{(activity.overtimeHours || 0).toFixed(2)}h
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded text-slate-300">0.00h</span>
+                      )}
                       <span className={cn("text-[9px] font-black px-1.5 py-0.5 rounded", activity.hasPerDiem ? "bg-emerald-50 text-emerald-600" : "text-slate-300")}>
                         {activity.hasPerDiem ? `$${activity.perDiemAmount}` : 'No'}
                       </span>

@@ -113,31 +113,34 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-10">
+        <header className="h-20 bg-white/60 backdrop-blur-md border-b border-slate-200/60 flex items-center justify-between px-6 sticky top-0 z-10 transition-all">
           <div className="flex items-center gap-4">
             <button
-              className="md:hidden p-2 text-slate-600"
+              className="md:hidden p-2.5 text-slate-600 bg-white shadow-sm border border-slate-200 rounded-xl"
               onClick={() => setIsMobileMenuOpen(true)}
             >
-              <Menu size={24} />
+              <Menu size={20} />
             </button>
-            <h2 className="text-lg font-display font-black text-slate-800 tracking-tight">
-              {navItems.find(i => i.id === activeTab)?.label || activeTab}
-            </h2>
+            <div className="hidden md:flex flex-col">
+              <h2 className="text-xl font-display font-black text-slate-800 tracking-tight">
+                {navItems.find(i => i.id === activeTab)?.label || activeTab}
+              </h2>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">{new Intl.DateTimeFormat('es-VE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'}).format(new Date())}</p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-6">
             <div className="relative">
               <button 
                 onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
                 className={cn(
-                  "p-2 text-slate-400 hover:text-slate-600 transition-colors relative rounded-xl hover:bg-slate-50",
-                  isNotificationsOpen && "bg-slate-100 text-slate-900"
+                  "p-2.5 text-slate-400 hover:text-brand-blue transition-colors relative rounded-xl hover:bg-brand-blue/5 border border-transparent hover:border-brand-blue/10",
+                  isNotificationsOpen && "bg-brand-blue/10 text-brand-blue border-brand-blue/20"
                 )}
               >
-                <Bell size={20} />
+                <Bell size={20} className={cn(unreadCount > 0 && "animate-swing origin-top")} />
                 {unreadCount > 0 && (
-                  <span className="absolute top-2 right-2 w-2 h-2 bg-brand-red rounded-full border-2 border-white"></span>
+                  <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-brand-red rounded-full border-2 border-white shadow-sm"></span>
                 )}
               </button>
               
@@ -153,14 +156,18 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
                 </>
               )}
             </div>
-            <div className="h-8 w-px bg-slate-200 mx-2"></div>
-            <div className="flex items-center gap-3">
+            
+            <div className="h-8 w-px bg-slate-200"></div>
+            
+            <div className="flex items-center gap-3 bg-white pl-4 pr-1.5 py-1.5 rounded-full border border-slate-200/60 shadow-sm shadow-slate-200/20">
               <div className="text-right hidden sm:block">
-                <p className="text-sm font-medium text-slate-900">{user?.displayName || 'Usuario'}</p>
-                <p className="text-xs text-slate-500 capitalize">{user?.role || 'Técnico'}</p>
+                <p className="text-xs font-bold text-slate-900 leading-tight">{user?.displayName || 'Usuario'}</p>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                  {user?.role === 'admin' ? 'Admin General' : user?.role === 'supervisor' ? 'Usu. Administrador' : 'Técnico'}
+                </p>
               </div>
-              <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-600 border border-slate-200">
-                <User size={20} />
+              <div className="w-9 h-9 bg-brand-blue rounded-full flex items-center justify-center text-white shadow-inner">
+                <User size={16} />
               </div>
             </div>
           </div>

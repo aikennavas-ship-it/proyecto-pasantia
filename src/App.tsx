@@ -113,6 +113,9 @@ export default function App() {
     }
   }, [user]);
 
+  const isGeneralAdmin = userProfile?.role === 'admin';
+  const isManager = isGeneralAdmin || userProfile?.role === 'supervisor';
+
   const activitiesQuery = query(
     collection(db, 'activities'),
     orderBy('date', 'desc')
@@ -164,7 +167,7 @@ export default function App() {
   const [confirmDelete, setConfirmDelete] = React.useState<{ type: 'activity' | 'technician', id: string, title: string } | null>(null);
 
   const handleAddActivity = async (data: any) => {
-    if (!user || userProfile?.role !== 'admin') return;
+    if (!user || !isManager) return;
     
     try {
       const { date, ...rest } = data;
@@ -179,7 +182,7 @@ export default function App() {
       // Add Notification
       await addDoc(collection(db, 'notifications'), {
         userId: user.uid,
-        userName: userProfile.displayName,
+        userName: userProfile?.displayName,
         type: 'activity_add',
         message: `Nueva labor registrada: ${data.title}`,
         relatedId: docRef.id,
@@ -194,7 +197,7 @@ export default function App() {
   };
 
   const handleAddTechnician = async (data: any) => {
-    if (!user || userProfile?.role !== 'admin') return;
+    if (!user || !isManager) return;
     try {
       const docRef = await addDoc(collection(db, 'technicians'), {
         ...data,
@@ -205,7 +208,7 @@ export default function App() {
       // Add Notification
       await addDoc(collection(db, 'notifications'), {
         userId: user.uid,
-        userName: userProfile.displayName,
+        userName: userProfile?.displayName,
         type: 'tech_add',
         message: `Técnico registrado: ${data.name}`,
         relatedId: docRef.id,
@@ -221,7 +224,7 @@ export default function App() {
 
   const [editingTechnician, setEditingTechnician] = React.useState<Technician | null>(null);
   const handleEditTechnician = async (data: any) => {
-    if (!user || userProfile?.role !== 'admin' || !editingTechnician) return;
+    if (!user || !isManager || !editingTechnician) return;
     try {
       await setDoc(doc(db, 'technicians', editingTechnician.id), {
         ...data,
@@ -235,12 +238,26 @@ export default function App() {
   };
 
   const handleDelete = async () => {
-    if (!confirmDelete || userProfile?.role !== 'admin') return;
+    if (!confirmDelete) return;
+
+    if (confirmDelete.type === 'technician' && !isGeneralAdmin) {
+      alert("Acceso denegado: Solo el Administrador General puede dar de baja a técnicos.");
+      setConfirmDelete(null);
+      return;
+    }
+    
+    if (confirmDelete.type === 'activity' && !isManager) {
+      return;
+    }
     
     try {
       const collectionName = confirmDelete.type === 'activity' ? 'activities' : 'technicians';
       
       if (confirmDelete.title === 'Eliminar permanentemente') {
+        if (!isGeneralAdmin) {
+          alert("Acceso denegado: Solo el Administrador General puede realizar eliminaciones permanentes.");
+          return;
+        }
         await deleteDoc(doc(db, collectionName, confirmDelete.id));
       } else {
         await setDoc(doc(db, collectionName, confirmDelete.id), {
@@ -256,7 +273,7 @@ export default function App() {
   };
 
   const handleRestore = async (type: 'activity' | 'technician', id: string) => {
-    if (userProfile?.role !== 'admin') return;
+    if (!isGeneralAdmin) return;
     try {
       const collectionName = type === 'activity' ? 'activities' : 'technicians';
       await setDoc(doc(db, collectionName, id), {
@@ -266,13 +283,13 @@ export default function App() {
 
       // Add Notification
       await addDoc(collection(db, 'notifications'), {
-        userId: user.uid,
-        userName: userProfile.displayName,
+        userId: user!.uid,
+        userName: userProfile?.displayName,
         type: 'restore',
         message: `Restaurado ${type === 'activity' ? 'labor' : 'técnico'} desde papelera`,
         relatedId: id,
         createdAt: Timestamp.now(),
-        readBy: [user.uid]
+        readBy: [user!.uid]
       });
     } catch (err) {
       console.error(`Error restoring ${type}:`, err);
@@ -280,7 +297,7 @@ export default function App() {
   };
 
   const handlePermanentDelete = async (type: 'activity' | 'technician', id: string) => {
-    if (userProfile?.role !== 'admin') return;
+    if (!isGeneralAdmin) return;
     try {
       const collectionName = type === 'activity' ? 'activities' : 'technicians';
       await deleteDoc(doc(db, collectionName, id));
@@ -291,7 +308,7 @@ export default function App() {
 
   const [editingActivity, setEditingActivity] = React.useState<Activity | null>(null);
   const handleEditActivity = async (data: any) => {
-    if (!user || userProfile?.role !== 'admin' || !editingActivity) return;
+    if (!user || !isManager || !editingActivity) return;
     
     try {
       const { date, ...rest } = data;
@@ -304,7 +321,7 @@ export default function App() {
       // Add Notification
       await addDoc(collection(db, 'notifications'), {
         userId: user.uid,
-        userName: userProfile.displayName,
+        userName: userProfile?.displayName,
         type: 'activity_edit',
         message: `Labor editada: ${data.title}`,
         relatedId: editingActivity.id,
@@ -400,28 +417,6 @@ export default function App() {
     );
   }
 
-  // Check if authorized
-  if (userProfile && userProfile.role !== 'admin') {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
-        <div className="w-16 h-16 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mb-6 shadow-sm">
-          <Settings size={32} />
-        </div>
-        <h2 className="text-2xl font-bold text-slate-900 mb-2">Acceso Restringido</h2>
-        <p className="text-slate-500 max-w-md mb-8">
-          Tu cuenta ({user.email}) ha sido registrada exitosamente, pero aún no tienes privilegios de administrador. 
-          Contacta al soporte técnico para activar tu acceso.
-        </p>
-        <button 
-          onClick={() => signOut()}
-          className="px-6 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg"
-        >
-          Cerrar Sesión
-        </button>
-      </div>
-    );
-  }
-
   const filteredActivities = activities?.filter(a => 
     a.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     a.description.toLowerCase().includes(searchQuery.toLowerCase())
@@ -446,24 +441,24 @@ export default function App() {
           technicians={technicians || []}
           selectedDate={selectedDate}
           onDateChange={setSelectedDate}
-          onAddActivity={() => {
+          onAddActivity={isManager ? () => {
             setEditingActivity(null);
             setIsFormOpen(true);
-          }}
-          onEdit={(activity) => {
+          } : undefined}
+          onEdit={isManager ? ((activity) => {
             setEditingActivity(activity);
             setIsFormOpen(true);
-          }}
-          onDelete={(id, title) => setConfirmDelete({ type: 'activity', id, title })}
+          }) : undefined}
+          onDelete={isManager ? ((id, title) => setConfirmDelete({ type: 'activity', id, title })) : undefined}
         />
       )}
 
       {activeTab === 'technicians' && (
         <TechnicianManagement 
           technicians={technicians || []} 
-          onAddTechnician={handleAddTechnician}
-          onEditTechnician={(tech) => setEditingTechnician(tech)}
-          onDeleteTechnician={(id, title) => setConfirmDelete({ type: 'technician', id, title })}
+          onAddTechnician={isManager ? handleAddTechnician : undefined}
+          onEditTechnician={isManager ? ((tech) => setEditingTechnician(tech)) : undefined}
+          onDeleteTechnician={isGeneralAdmin ? ((id, title) => setConfirmDelete({ type: 'technician', id, title })) : undefined}
           isLoading={techniciansLoading}
         />
       )}
@@ -512,7 +507,7 @@ export default function App() {
                     </div>
                   </div>
                   <div className="badge bg-brand-blue/10 text-brand-blue text-[10px] uppercase font-black tracking-widest px-3 py-1 rounded-full inline-block">
-                    Rol: {userProfile?.role}
+                    Rol: {userProfile?.role === 'admin' ? 'Administrador General' : userProfile?.role === 'supervisor' ? 'Usuario Administrador' : 'Técnico'}
                   </div>
                 </div>
 
