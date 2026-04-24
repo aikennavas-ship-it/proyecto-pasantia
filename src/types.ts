@@ -38,7 +38,8 @@ export interface Technician {
   name: string;
   employeeId: string;
   specialty: string;
-  status: 'activo' | 'inactivo';
+  phoneNumber?: string;
+  status: string;
   createdAt: Timestamp;
   isDeleted?: boolean;
   deletedAt?: Timestamp;

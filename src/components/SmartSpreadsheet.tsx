@@ -5,6 +5,7 @@ import { cn } from '../lib/utils';
 import { format, startOfDay, endOfDay, isSameDay, addDays, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import * as XLSX from 'xlsx';
+import { formatHours } from './ActivityForm';
 
 interface SmartSpreadsheetProps {
   activities: Activity[];
@@ -37,10 +38,10 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
     const activityDate = a.date.toDate();
     const isToday = isSameDay(activityDate, selectedDate);
     const matchesSearch = searchTerm === '' || 
-      a.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (a.incidentNumber && a.incidentNumber.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      a.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (a.technicianName && a.technicianName.toLowerCase().includes(searchTerm.toLowerCase()));
+      (a.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (a.incidentNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (a.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (a.technicianName || '').toLowerCase().includes(searchTerm.toLowerCase());
     
     return isToday && matchesSearch;
   });
@@ -93,12 +94,12 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
       
       parts.forEach(p => {
         // Find technician info in system
-        const techMatch = technicians.find(t => t.name.toLowerCase() === p.toLowerCase());
+        const techMatch = technicians.find(t => (t.name || '').toLowerCase() === (p || '').toLowerCase());
         
         data.push({
-          'AREA': techMatch ? techMatch.specialty.toUpperCase() : a.type.toUpperCase(),
+          'AREA': techMatch ? (techMatch.specialty || '').toUpperCase() : (a.type || '').toUpperCase(),
           'P00': techMatch ? techMatch.employeeId : 'S/N',
-          'Nombres y Apellidos': p.toUpperCase(),
+          'Nombres y Apellidos': (p || '').toUpperCase(),
           'Cedula': techMatch ? techMatch.employeeId : 'S/N',
           'Región': 'Central',
           'Fecha': format(a.date.toDate(), 'M/d/yyyy'),
@@ -322,7 +323,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                                 ? "text-emerald-600 bg-emerald-50 border-emerald-100" 
                                 : "text-red-600 bg-red-50 border-red-100"
                             )}>
-                              {(activity.overtimeHours || 0) > 0 ? '+' : ''}{(activity.overtimeHours || 0).toFixed(2)}h
+                              {(activity.overtimeHours || 0) > 0 ? '+' : ''}{formatHours(activity.overtimeHours || 0)}
                             </span>
                           </div>
                         )}
@@ -429,7 +430,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                             ? "bg-emerald-50 text-emerald-600 border-emerald-100" 
                             : "bg-red-50 text-red-600 border-red-100"
                         )}>
-                          {(activity.overtimeHours || 0) > 0 ? '+' : ''}{(activity.overtimeHours || 0).toFixed(2)}h
+                          {(activity.overtimeHours || 0) > 0 ? '+' : ''}{formatHours(activity.overtimeHours || 0)}
                         </span>
                       ) : (
                         <span className="text-[9px] font-black px-1.5 py-0.5 rounded text-slate-300">0.00h</span>
@@ -493,7 +494,14 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
           <div className="flex flex-col">
             <span className="text-[9px] font-black text-white/40 uppercase tracking-widest">ST Acumulado</span>
             <span className="text-xl font-display font-black text-emerald-400">
-              {sortedActivities.reduce((acc, a) => acc + (a.overtimeHours || 0), 0).toFixed(1)}h
+              {formatHours(sortedActivities.reduce((acc, a) => acc + ((a.overtimeHours || 0) > 0 ? a.overtimeHours! : 0), 0))}
+            </span>
+          </div>
+          <div className="h-8 w-px bg-white/10" />
+          <div className="flex flex-col">
+            <span className="text-[9px] font-black text-white/40 uppercase tracking-widest">DF Acumulado</span>
+            <span className="text-xl font-display font-black text-red-400">
+              {formatHours(sortedActivities.reduce((acc, a) => acc + ((a.overtimeHours || 0) < 0 ? a.overtimeHours! : 0), 0))}
             </span>
           </div>
         </div>

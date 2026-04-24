@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserPlus, Search, Shield, BadgeCheck, X, Briefcase, Trash2, Edit2 } from 'lucide-react';
+import { UserPlus, Search, Shield, BadgeCheck, X, Briefcase, Trash2, Edit2, Phone } from 'lucide-react';
 import { Technician } from '../types';
 import { cn } from '../lib/utils';
 import TechnicianForm from './TechnicianForm';
@@ -17,8 +17,8 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
   const [searchTerm, setSearchTerm] = React.useState('');
 
   const filteredTechs = technicians.filter(t => 
-    t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.employeeId.toLowerCase().includes(searchTerm.toLowerCase())
+    (t.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (t.employeeId || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -166,15 +166,25 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
                   </div>
                   <span className={cn(
                     "text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full",
-                    tech.status === 'activo' ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"
+                    (tech.status || '').toLowerCase() === 'activo' ? "bg-emerald-50 text-emerald-600" :
+                    (tech.status || '').toLowerCase() === 'inactivo' || (tech.status || '').toLowerCase() === 'baja' ? "bg-red-50 text-red-600" :
+                    "bg-amber-50 text-amber-600"
                   )}>
                     {tech.status}
                   </span>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <Briefcase size={12} className="text-slate-400" />
-                    <span className="text-[11px] font-bold text-slate-600">{tech.specialty}</span>
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center gap-2">
+                      <Briefcase size={12} className="text-slate-400" />
+                      <span className="text-[11px] font-bold text-slate-600">{tech.specialty}</span>
+                    </div>
+                    {tech.phoneNumber && (
+                      <div className="flex items-center gap-2">
+                        <Phone size={12} className="text-slate-400" />
+                        <span className="text-[11px] font-bold text-slate-600">{tech.phoneNumber}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                      {onEditTechnician && (
@@ -205,6 +215,7 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
         <TechnicianForm 
           onClose={() => setIsFormOpen(false)} 
           onSubmit={onAddTechnician}
+          technicians={technicians}
         />
       )}
     </div>

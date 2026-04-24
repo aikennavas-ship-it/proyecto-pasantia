@@ -174,10 +174,27 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
         </header>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-7xl mx-auto">
-            {children}
+        <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
+          <div className="p-6 flex-1">
+            <div className="max-w-7xl mx-auto">
+              {children}
+            </div>
           </div>
+          
+          {/* Main Footer */}
+          <footer className="mt-auto border-t border-slate-200/60 bg-white/50 px-6 py-4 backdrop-blur-sm">
+             <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
+                 <div className="flex items-center gap-2 text-slate-500">
+                    <span className="font-display font-black text-brand-blue tracking-tight">CANTV</span>
+                    <span className="text-xs font-medium">© {new Date().getFullYear()} Gerencia de Datos y Transmisión. Todos los derechos reservados.</span>
+                 </div>
+                 <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest flex items-center gap-4">
+                   <span>Sistema de Gestión Inteligente</span>
+                   <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
+                   <span>V 2.1.0</span>
+                 </div>
+             </div>
+          </footer>
         </div>
       </main>
 

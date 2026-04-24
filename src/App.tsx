@@ -28,7 +28,7 @@ import { Activity, UserProfile, Technician } from './types';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import ActivityCard from './components/ActivityCard';
-import ActivityForm from './components/ActivityForm';
+import ActivityForm, { formatHours } from './components/ActivityForm';
 import Login from './components/Login';
 import TechnicianManagement from './components/TechnicianManagement';
 import ReportGenerator from './components/ReportGenerator';
@@ -42,6 +42,7 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { where } from 'firebase/firestore';
+import { startOfDay } from 'date-fns';
 
 export default function App() {
   const [user, loading, error] = useAuthState(auth);
@@ -123,6 +124,36 @@ export default function App() {
   
   const [activitiesSnapshot, activitiesLoading] = useCollection(activitiesQuery);
   const activities = React.useMemo(() => activitiesSnapshot?.docs.map(doc => ({ id: doc.id, ...doc.data() } as Activity)).filter(a => a.isDeleted !== true) || [], [activitiesSnapshot]);
+
+  // Cleanup future-dated activities
+  React.useEffect(() => {
+    if (isGeneralAdmin && activities.length > 0) {
+      const now = new Date();
+      const offset = -4; // UTC-4 Maracay
+      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+      const maracayTime = new Date(utc + (3600000 * offset));
+      const todayStart = startOfDay(maracayTime);
+
+      const scrubFutureActivities = async () => {
+        const futureActivities = activities.filter(a => {
+          if (!a.date) return false;
+          const aDate = a.date instanceof Timestamp ? a.date.toDate() : new Date(a.date);
+          return startOfDay(aDate) > todayStart; // Strictly greater than today
+        });
+
+        for (const act of futureActivities) {
+          try {
+            await deleteDoc(doc(db, 'activities', act.id));
+            console.log(`Scrubbed future activity automatically: ${act.title}`);
+          } catch(e) {
+            console.error("Failed to scrub activity", e);
+          }
+        }
+      };
+
+      scrubFutureActivities();
+    }
+  }, [activities, isGeneralAdmin]);
 
   const techniciansQuery = query(
     collection(db, 'technicians'),
@@ -330,6 +361,7 @@ export default function App() {
       });
 
       setEditingActivity(null);
+      setIsFormOpen(false);
     } catch (err) {
       console.error("Error editing activity:", err);
     }
@@ -344,7 +376,7 @@ export default function App() {
       Tipo: a.type,
       'Hora Inicio': a.startTime || '--:--',
       'Hora Fin': a.endTime || '--:--',
-      'Horas Extra': a.overtimeHours || 0,
+      'ST/DF': a.overtimeHours ? formatHours(a.overtimeHours) : '0h',
       'Viáticos': a.hasPerDiem ? 'Sí' : 'No',
       Participantes: a.participants?.join(', ') || a.technicianName,
       Fecha: a.date.toDate().toLocaleString('es-VE'),
@@ -374,14 +406,14 @@ export default function App() {
       a.title,
       a.startTime || '-',
       a.endTime || '-',
-      a.overtimeHours ? `${a.overtimeHours}h` : '0h',
+      a.overtimeHours ? formatHours(a.overtimeHours) : '0h',
       a.hasPerDiem ? 'Sí' : 'No',
       a.date.toDate().toLocaleDateString('es-VE')
     ]);
 
     autoTable(docPdf, {
       startY: 45,
-      head: [['Título', 'H. Inicio', 'H. Fin', 'S. Tiempo', 'Viáticos', 'Fecha']],
+      head: [['Título', 'H. Inicio', 'H. Fin', 'ST/DF', 'Viáticos', 'Fecha']],
       body: tableData,
       headStyles: { fillColor: [0, 74, 153] },
       theme: 'grid'
@@ -417,10 +449,11 @@ export default function App() {
     );
   }
 
-  const filteredActivities = activities?.filter(a => 
-    a.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    a.description.toLowerCase().includes(searchQuery.toLowerCase())
-  ) || [];
+  const filteredActivities = activities?.filter(a => {
+    const titleMatch = (a.title || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const descMatch = (a.description || '').toLowerCase().includes(searchQuery.toLowerCase());
+    return titleMatch || descMatch;
+  }) || [];
 
   return (
     <Layout 
@@ -607,6 +640,7 @@ export default function App() {
           initialData={editingTechnician}
           onClose={() => setEditingTechnician(null)}
           onSubmit={handleEditTechnician}
+          technicians={technicians}
         />
       )}
     </Layout>

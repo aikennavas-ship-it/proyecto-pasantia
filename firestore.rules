@@ -71,6 +71,7 @@ service cloud.firestore {
              data.name is string &&
              (!('employeeId' in data) || data.employeeId is string) &&
              (!('specialty' in data) || data.specialty is string) &&
+             (!('phoneNumber' in data) || data.phoneNumber is string) &&
              (!('status' in data) || data.status is string) &&
              (!('createdAt' in data) || data.createdAt is timestamp || data.createdAt is string) &&
              (!('isDeleted' in data) || data.isDeleted is bool) &&

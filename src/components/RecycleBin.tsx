@@ -22,13 +22,13 @@ export default function RecycleBin({
   const [searchTerm, setSearchTerm] = React.useState('');
 
   const filteredActivities = deletedActivities.filter(a => 
-    a.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    a.description.toLowerCase().includes(searchTerm.toLowerCase())
+    (a.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (a.description || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const filteredTechnicians = deletedTechnicians.filter(t => 
-    t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.employeeId.toLowerCase().includes(searchTerm.toLowerCase())
+    (t.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (t.employeeId || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (

@@ -2,6 +2,7 @@ import React from 'react';
 import { Clock, AlertCircle, CheckCircle2, MoreVertical, MessageSquare, Plus } from 'lucide-react';
 import { Activity } from '../types';
 import { cn, formatDate } from '../lib/utils';
+import { formatHours } from './ActivityForm';
 
 interface ActivityCardProps {
   activity: Activity;
@@ -55,9 +56,14 @@ export default function ActivityCard({ activity, onEdit }: ActivityCardProps) {
         <div>
           <p className="stat-label mb-1">Métricas</p>
           <div className="flex flex-wrap gap-2">
-            {activity.overtimeHours && activity.overtimeHours > 0 ? (
-              <span className="text-[10px] font-black text-brand-blue bg-brand-blue/10 px-1.5 py-0.5 rounded">
-                +{activity.overtimeHours}h S.T
+            {activity.overtimeHours && activity.overtimeHours !== 0 ? (
+              <span className={cn(
+                "text-[10px] font-black px-1.5 py-0.5 rounded",
+                activity.overtimeHours > 0
+                  ? "text-brand-blue bg-brand-blue/10"
+                  : "text-red-500 bg-red-50"
+              )}>
+                {activity.overtimeHours > 0 ? '+' : ''}{formatHours(activity.overtimeHours)} {activity.overtimeHours > 0 ? 'S.T' : 'D.F'}
               </span>
             ) : (
               <span className="text-[10px] font-black text-slate-300">SIN S.T</span>

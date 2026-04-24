@@ -1,24 +1,61 @@
 import React from 'react';
-import { X } from 'lucide-react';
+import { X, AlertCircle } from 'lucide-react';
 import { Technician } from '../types';
 
 interface TechnicianFormProps {
   onClose: () => void;
   onSubmit: (data: any) => void;
   initialData?: Technician | null;
+  technicians: Technician[];
 }
 
-export default function TechnicianForm({ onClose, onSubmit, initialData }: TechnicianFormProps) {
+export default function TechnicianForm({ onClose, onSubmit, initialData, technicians }: TechnicianFormProps) {
+  const predefinedStatuses = ['activo', 'inactivo', 'baja', 'reposo', 'vacaciones'];
+  
+  // Parse initial status to handle custom 'otro' logic safely
+  const initialStatusVal = (initialData?.status || 'activo').toLowerCase();
+  const isCustomStatus = !predefinedStatuses.includes(initialStatusVal);
+
   const [data, setData] = React.useState({
     name: initialData?.name || '',
-    employeeId: initialData?.employeeId || '',
-    specialty: initialData?.specialty || 'Datos',
-    status: initialData?.status || 'activo'
+    employeeId: initialData?.employeeId || 'V-',
+    specialty: initialData?.specialty || '', // Empty by default since it is free text now
+    phoneNumber: initialData?.phoneNumber || '',
+    status: isCustomStatus ? 'otro' : initialStatusVal,
+    customStatus: isCustomStatus ? (initialData?.status || '') : ''
   });
+  
+  const [errorPrompt, setErrorPrompt] = React.useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(data);
+    setErrorPrompt('');
+    
+    const finalStatus = data.status === 'otro' ? data.customStatus.trim() : data.status;
+
+    // Check missing fields
+    if (!data.name || !data.employeeId || !data.specialty || !data.phoneNumber || !finalStatus) {
+      setErrorPrompt('Por favor, rellene todos los campos requeridos del formulario.');
+      return;
+    }
+
+    // Check duplicate ID
+    const isDuplicate = technicians.some(
+      t => (t.employeeId || '').toLowerCase() === (data.employeeId || '').toLowerCase() && t.id !== initialData?.id
+    );
+
+    if (isDuplicate) {
+      setErrorPrompt(`El técnico con número de Carnet/Cédula "${data.employeeId}" ya existe en el sistema. Ingrese uno diferente.`);
+      return;
+    }
+
+    onSubmit({
+      name: data.name,
+      employeeId: data.employeeId,
+      specialty: data.specialty,
+      phoneNumber: data.phoneNumber,
+      status: finalStatus
+    });
     onClose();
   };
 
@@ -33,7 +70,14 @@ export default function TechnicianForm({ onClose, onSubmit, initialData }: Techn
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-8 space-y-5">
+        <form onSubmit={handleSubmit} className="p-8 space-y-5 max-h-[85vh] overflow-y-auto custom-scrollbar">
+          {errorPrompt && (
+            <div className="p-4 bg-red-50 rounded-xl border border-red-100 flex items-start gap-3 animate-in slide-in-from-top-2">
+              <AlertCircle size={18} className="text-red-500 mt-0.5 shrink-0" />
+              <p className="text-xs font-bold text-red-600">{errorPrompt}</p>
+            </div>
+          )}
+          
           <div className="space-y-1">
             <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Nombre Completo</label>
             <input
@@ -52,35 +96,73 @@ export default function TechnicianForm({ onClose, onSubmit, initialData }: Techn
               className="input-field"
               placeholder="Ej: V-12345678"
               value={data.employeeId}
-              onChange={e => setData({ ...data, employeeId: e.target.value })}
+              onChange={e => {
+                let val = e.target.value;
+                if (!val.startsWith('V-')) {
+                  // If they deleted V-, just put it back for them or let them type correctly
+                  val = 'V-' + val.replace(/v-?/i, '');
+                }
+                // Also uppercase the v just in case
+                val = val.toUpperCase().replace('v-', 'V-');
+                setData({ ...data, employeeId: val });
+              }}
+            />
+          </div>
+          
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Número de Teléfono</label>
+            <input
+              required
+              type="tel"
+              className="input-field"
+              placeholder="Ej: 0412-1234567"
+              value={data.phoneNumber}
+              onChange={e => setData({ ...data, phoneNumber: e.target.value })}
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Especialidad</label>
-            <select
+            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Especialidad / Cargo</label>
+            <input
+              required
+              type="text"
               className="input-field"
+              placeholder="Especifique el cargo o especialidad..."
               value={data.specialty}
               onChange={e => setData({ ...data, specialty: e.target.value })}
-            >
-              <option value="Datos">Datos</option>
-              <option value="Transmisión">Transmisión</option>
-              <option value="Provisión">Provisión</option>
-              <option value="Servicios Auxiliares">Servicios Auxiliares</option>
-            </select>
+            />
           </div>
 
           <div className="space-y-1">
             <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Estado Administrativo</label>
             <select
+              required
               className="input-field"
               value={data.status}
-              onChange={e => setData({ ...data, status: e.target.value as any })}
+              onChange={e => setData({ ...data, status: e.target.value })}
             >
               <option value="activo">Activo</option>
-              <option value="inactivo">Inactivo / Baja</option>
+              <option value="inactivo">Inactivo</option>
+              <option value="baja">Baja</option>
+              <option value="reposo">Reposo</option>
+              <option value="vacaciones">Vacaciones</option>
+              <option value="otro">Otro (Especificar)</option>
             </select>
           </div>
+          
+          {data.status === 'otro' && (
+            <div className="space-y-1 animate-in slide-in-from-top-2">
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Especificar Estado</label>
+              <input
+                required
+                type="text"
+                className="input-field"
+                placeholder="Ej: Permiso no remunerado..."
+                value={data.customStatus}
+                onChange={e => setData({ ...data, customStatus: e.target.value })}
+              />
+            </div>
+          )}
 
           <div className="pt-4 flex gap-3">
             <button

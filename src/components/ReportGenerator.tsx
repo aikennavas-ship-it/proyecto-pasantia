@@ -7,6 +7,7 @@ import autoTable from 'jspdf-autotable';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, getYear, getMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn } from '../lib/utils';
+import { formatHours } from './ActivityForm';
 
 interface ReportGeneratorProps {
   activities: Activity[];
@@ -34,8 +35,8 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
 
   const generateSobretiempoExcel = () => {
     // 1. Prepare Data for "Registro de Labores y Horarios" Mega-Sheet
-    const transmissionTechs = technicians.filter(t => t.status === 'activo' && t.specialty.toLowerCase().includes('transmisión'));
-    const datosTechs = technicians.filter(t => t.status === 'activo' && t.specialty.toLowerCase().includes('datos'));
+    const transmissionTechs = technicians.filter(t => t.status === 'activo' && (t.specialty || '').toLowerCase().includes('transmisión'));
+    const datosTechs = technicians.filter(t => t.status === 'activo' && (t.specialty || '').toLowerCase().includes('datos'));
     const otherTechs = technicians.filter(t => t.status === 'activo' && !transmissionTechs.includes(t) && !datosTechs.includes(t));
     
     const allActiveTechs = [...transmissionTechs, ...datosTechs, ...otherTechs];
@@ -171,8 +172,9 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
     docPdf.setTextColor(40, 40, 40);
     docPdf.setFontSize(11);
     docPdf.text(`Total de Incidencias: ${filteredActivities.length}`, 14, 50);
-    const totalOT = filteredActivities.reduce((acc, a) => acc + (a.overtimeHours || 0), 0);
-    docPdf.text(`Horas Extra Totales: ${totalOT.toFixed(1)}h`, 14, 56);
+    const totalOT = filteredActivities.reduce((acc, a) => acc + ((a.overtimeHours || 0) > 0 ? a.overtimeHours! : 0), 0);
+    const totalDF = filteredActivities.reduce((acc, a) => acc + ((a.overtimeHours || 0) < 0 ? a.overtimeHours! : 0), 0);
+    docPdf.text(`Horas Extra: +${formatHours(totalOT)}    Déficit: ${formatHours(totalDF)}`, 14, 56);
 
     // Table Data
     const tableData = filteredActivities.map(a => [
@@ -180,13 +182,13 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
       a.incidentNumber || 'S/N',
       a.title,
       a.participants?.join(', ').split(' ').filter((_, i) => i % 2 === 0).join(', ') || '-',
-      a.overtimeHours ? `${a.overtimeHours}h` : '-',
+      a.overtimeHours ? formatHours(a.overtimeHours) : '-',
       a.hasPerDiem ? 'SÍ' : 'NO'
     ]);
 
     autoTable(docPdf, {
       startY: 65,
-      head: [['FECHA', 'INCIDENTE', 'LABOR REALIZADA', 'TÉCNICOS', 'ST', 'VIÁT.']],
+      head: [['FECHA', 'INCIDENTE', 'LABOR REALIZADA', 'TÉCNICOS', 'ST/DF', 'VIÁT.']],
       body: tableData,
       headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 9, fontStyle: 'bold' },
       bodyStyles: { fontSize: 8, textColor: [51, 65, 85] },
@@ -433,7 +435,7 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
                                   ? "bg-emerald-50 text-emerald-600 border-emerald-100" 
                                   : "bg-red-50 text-red-600 border-red-100"
                               )}>
-                                {(activity.overtimeHours || 0) > 0 ? '+' : ''}{(activity.overtimeHours || 0).toFixed(2)}h
+                                {(activity.overtimeHours || 0) > 0 ? '+' : ''}{formatHours(activity.overtimeHours || 0)}
                               </span>
                             )}
                             {activity.hasPerDiem && (

@@ -1,7 +1,20 @@
 import React from 'react';
 import { ActivityType, Technician } from '../types';
-import { X } from 'lucide-react';
+import { X, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
+
+export function formatHours(decimalHours: number): string {
+  if (!decimalHours || decimalHours === 0) return '0h';
+  const isNegative = decimalHours < 0;
+  const absoluteDecimal = Math.abs(decimalHours);
+  const hours = Math.floor(absoluteDecimal);
+  const minutes = Math.round((absoluteDecimal - hours) * 60);
+  
+  const sign = isNegative ? '-' : '';
+  if (hours > 0 && minutes > 0) return `${sign}${hours}h ${minutes}m`;
+  if (hours > 0) return `${sign}${hours}h`;
+  return `${sign}${minutes}m`;
+}
 
 interface ActivityFormProps {
   onSubmit: (data: any) => void;
@@ -27,6 +40,8 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
     date: initialData?.date ? initialData.date.toDate() : (initialDate || new Date()),
   });
 
+  const [errorPrompt, setErrorPrompt] = React.useState('');
+
   const toggleParticipant = (name: string) => {
     const current = [...formData.participants];
     const index = current.indexOf(name);
@@ -38,8 +53,35 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
     setFormData({ ...formData, participants: current });
   };
 
+  const getTodayStr = () => {
+    const now = new Date();
+    const offset = -4; // UTC-4 Maracay
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const maracayTime = new Date(utc + (3600000 * offset));
+    return maracayTime.toISOString().split('T')[0];
+  };
+
+  const todayStr = getTodayStr();
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorPrompt('');
+
+    // Extra strict check
+    if (!formData.title || !formData.incidentNumber || !formData.fleet || !formData.date || !formData.description || !formData.type || !formData.startTime || !formData.endTime) {
+      setErrorPrompt('Todos los campos son obligatorios. Por favor, rellena los datos faltantes.');
+      return;
+    }
+
+    if (formData.hasPerDiem && !formData.perDiemAmount) {
+      setErrorPrompt('Si hay viáticos, debes especificar el monto estimado.');
+      return;
+    }
+
+    if (formData.participants.length === 0) {
+      setErrorPrompt('Debes seleccionar al menos un técnico participante.');
+      return;
+    }
     
     // Calculate overtime if both times are present
     let overtimeHours = 0;
@@ -47,19 +89,23 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
       const start = new Date(`2000-01-01T${formData.startTime}`);
       const end = new Date(`2000-01-01T${formData.endTime}`);
       
-      let diff = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-      if (diff < 0) diff += 24; // Handle shift crossing midnight
+      let diffMs = end.getTime() - start.getTime();
+      let diffHours = diffMs / (1000 * 60 * 60);
+      
+      if (diffHours < 0) diffHours += 24; // Handle shift crossing midnight
       
       const STANDARD_HOURS = 8;
-      let rawOvertime = diff - STANDARD_HOURS;
+      let rawOvertime = diffHours - STANDARD_HOURS;
       
-      // Umbral de tolerancia de 15 minutos (0.25 horas) para evitar registrar sobretiempo/deficit minúsculo
-      const GRACE_PERIOD = 15 / 60; 
+      // Keep exact decimal for conversion to Mins/Hours later
+      // A negative rawOvertime indicates a deficit
+      overtimeHours = Number(rawOvertime.toFixed(4));
       
-      if (Math.abs(rawOvertime) <= GRACE_PERIOD) {
-        overtimeHours = 0;
-      } else {
-        overtimeHours = Number(rawOvertime.toFixed(2));
+      // Warn if extremely unusual calculations (e.g. over 12 hours of overtime)
+      if (overtimeHours > 12) {
+        if (!window.confirm(`Advertencia: El cálculo de horas extras es inusualmente alto (+${formatHours(overtimeHours)}). ¿Desea continuar y enviar de todos modos?`)) {
+          return;
+        }
       }
     }
 
@@ -88,6 +134,13 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
         </div>
 
         <form onSubmit={handleSubmit} className="p-8 space-y-6 max-h-[85vh] overflow-y-auto custom-scrollbar">
+          {errorPrompt && (
+            <div className="p-4 bg-red-50 rounded-xl border border-red-100 flex items-start gap-3 animate-in slide-in-from-top-2">
+              <AlertCircle size={18} className="text-red-500 mt-0.5 shrink-0" />
+              <p className="text-xs font-bold text-red-600">{errorPrompt}</p>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Título de la Actividad</label>
@@ -103,6 +156,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Nro de Incidente</label>
               <input
+                required
                 type="text"
                 className="input-field font-mono text-sm"
                 placeholder="Ej: INC-2024-001"
@@ -113,6 +167,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Flota (Vehículo)</label>
               <input
+                required
                 type="text"
                 className="input-field"
                 placeholder="Ej: Hilux 21 / V-456"
@@ -126,6 +181,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
                 required
                 type="date"
                 className="input-field"
+                max={todayStr}
                 value={formData.date instanceof Date ? formData.date.toISOString().split('T')[0] : ''}
                 onChange={e => setFormData({ ...formData, date: new Date(e.target.value + 'T00:00:00') })}
               />
@@ -156,11 +212,11 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
             </div>
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Hora Inicio</label>
-              <input type="time" className="input-field" value={formData.startTime} onChange={e => setFormData({ ...formData, startTime: e.target.value })} />
+              <input required type="time" className="input-field" value={formData.startTime} onChange={e => setFormData({ ...formData, startTime: e.target.value })} />
             </div>
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Hora Fin</label>
-              <input type="time" className="input-field" value={formData.endTime} onChange={e => setFormData({ ...formData, endTime: e.target.value })} />
+              <input required type="time" className="input-field" value={formData.endTime} onChange={e => setFormData({ ...formData, endTime: e.target.value })} />
             </div>
           </div>
 
@@ -179,6 +235,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
                 <div className="space-y-1 animate-in slide-in-from-top-2 duration-200">
                   <label className="text-[10px] font-bold text-slate-400 italic">Monto Estimado</label>
                   <input
+                    required
                     type="number"
                     className="input-field h-10 text-sm font-bold"
                     placeholder="0.00"
