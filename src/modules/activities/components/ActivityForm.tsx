@@ -1,7 +1,7 @@
 import React from 'react';
-import { ActivityType, Technician } from '../types';
+import { ActivityType, Technician } from '../../../types';
 import { X, AlertCircle } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn } from '../../../lib/utils';
 
 export function formatHours(decimalHours: number): string {
   if (!decimalHours || decimalHours === 0) return '0h';
@@ -30,14 +30,24 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
     description: initialData?.description || '',
     incidentNumber: initialData?.incidentNumber || '',
     fleet: initialData?.fleet || '',
-    type: initialData?.type || 'datos',
+    region: initialData?.region || 'Central',
     technicianName: initialData?.technicianName || '',
-    startTime: initialData?.startTime || '08:00',
-    endTime: initialData?.endTime || '16:00',
+    startTimeMorning: initialData?.startTimeMorning || initialData?.startTime || '08:00',
+    endTimeMorning: initialData?.endTimeMorning || '11:45',
+    hasPause: initialData?.hasPause || 'SI',
+    startTimeAfternoon: initialData?.startTimeAfternoon || '12:45',
+    endTimeAfternoon: initialData?.endTimeAfternoon || initialData?.endTime || '16:00',
     hasPerDiem: initialData?.hasPerDiem || false,
     perDiemAmount: initialData?.perDiemAmount?.toString() || '',
-    participants: initialData?.participants || [] as string[],
-    date: initialData?.date ? initialData.date.toDate() : (initialDate || new Date()),
+    participants: (initialData?.participants && initialData.participants.length > 0) 
+      ? initialData.participants 
+      : (initialData?.technicianName ? [initialData.technicianName] : []) as string[],
+    date: (function() {
+      if (!initialData?.date) return initialDate || new Date();
+      if (typeof initialData.date.toDate === 'function') return initialData.date.toDate();
+      const d = new Date(initialData.date);
+      return isNaN(d.getTime()) ? (initialDate || new Date()) : d;
+    })(),
   });
 
   const [errorPrompt, setErrorPrompt] = React.useState('');
@@ -63,12 +73,12 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
 
   const todayStr = getTodayStr();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorPrompt('');
 
     // Extra strict check
-    if (!formData.title || !formData.incidentNumber || !formData.fleet || !formData.date || !formData.description || !formData.type || !formData.startTime || !formData.endTime) {
+    if (!formData.title || !formData.incidentNumber || !formData.fleet || !formData.region || !formData.date || !formData.description || !formData.startTimeMorning || !formData.endTimeMorning) {
       setErrorPrompt('Todos los campos son obligatorios. Por favor, rellena los datos faltantes.');
       return;
     }
@@ -83,57 +93,103 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
       return;
     }
     
-    // Calculate overtime if both times are present
-    let overtimeHours = 0;
-    if (formData.startTime && formData.endTime) {
-      const start = new Date(`2000-01-01T${formData.startTime}`);
-      const end = new Date(`2000-01-01T${formData.endTime}`);
+    // Calculate worked time based on morning and afternoon shifts as a unified workday
+    // Helper to robustly parse "HH:MM" to decimal hours
+    const parseTime = (timeStr: string) => {
+      if (!timeStr) return 0;
+      const [h, m] = timeStr.split(':').map(Number);
+      return (h || 0) + (m || 0) / 60;
+    };
+
+    let totalWorkedHours = 0;
+    let emTime = 0;
+    let saTime = 0;
+    
+    // 1. Morning Shift
+    if (formData.startTimeMorning && formData.endTimeMorning) {
+      const sm = parseTime(formData.startTimeMorning);
+      let em = parseTime(formData.endTimeMorning);
       
-      let diffMs = end.getTime() - start.getTime();
-      let diffHours = diffMs / (1000 * 60 * 60);
-      
-      if (diffHours < 0) diffHours += 24; // Handle shift crossing midnight
-      
-      const STANDARD_HOURS = 8;
-      let rawOvertime = diffHours - STANDARD_HOURS;
-      
-      // Keep exact decimal for conversion to Mins/Hours later
-      // A negative rawOvertime indicates a deficit
-      overtimeHours = Number(rawOvertime.toFixed(4));
-      
-      // Warn if extremely unusual calculations (e.g. over 12 hours of overtime)
-      if (overtimeHours > 12) {
-        if (!window.confirm(`Advertencia: El cálculo de horas extras es inusualmente alto (+${formatHours(overtimeHours)}). ¿Desea continuar y enviar de todos modos?`)) {
-          return;
-        }
+      emTime = em;
+
+      if (em >= 15 && sm < 12) {
+         setErrorPrompt(`Ha colocado "Salida Mañana" en horario PM (${formData.endTimeMorning}). Revise si debió ser AM.`);
+         return;
       }
+
+      if (em < sm) {
+          em += 24;
+      }
+      totalWorkedHours += (em - sm);
     }
 
-    onSubmit({
-      ...formData,
-      perDiemAmount: formData.perDiemAmount ? Number(formData.perDiemAmount) : 0,
-      overtimeHours,
-      technicianName: formData.participants[0] || 'Sin asignar', // Primario
-    });
+    // 2. Afternoon Shift
+    if (formData.startTimeAfternoon && formData.endTimeAfternoon) {
+      saTime = parseTime(formData.startTimeAfternoon);
+      let ea = parseTime(formData.endTimeAfternoon);
+
+      if (ea < saTime) {
+          ea += 24;
+      }
+      totalWorkedHours += (ea - saTime);
+    }
+
+    // 3. Pause Logic
+    if (formData.hasPause === 'NO' && emTime > 0 && saTime > 0) {
+      let gap = saTime - emTime;
+      if (gap < 0) gap += 24;
+      totalWorkedHours += gap;
+    }
+
+    // Safety checks
+    if (isNaN(totalWorkedHours)) {
+      setErrorPrompt('Error al calcular las horas. Revise los formatos de tiempo.');
+      return;
+    }
+    
+    // 4. Overtime (ST) and Deficit (DF) calculation
+    // Base is 7.25 hours as requested (07:45 to 11:45 = 4h, 12:45 to 16:00 = 3.25h)
+    const STANDARD_WORKDAY = 7.25;
+    let overtimeHours = Number((totalWorkedHours - STANDARD_WORKDAY).toFixed(4));
+
+    
+    // Sanity check for extremely high values (> 24h)
+    if (totalWorkedHours > 20) {
+        setErrorPrompt("La jornada total excede las 20 horas. Verifique los horarios (AM/PM).");
+        return;
+    }
+
+    try {
+      await onSubmit({
+        ...formData,
+        perDiemAmount: formData.perDiemAmount ? Number(formData.perDiemAmount) : 0,
+        overtimeHours,
+        totalHours: Number(totalWorkedHours.toFixed(4)),
+        technicianName: formData.participants[0] || 'Sin asignar', // Primario
+      });
+    } catch (err) {
+      console.error("Error submitting form:", err);
+      setErrorPrompt("Error al guardar la actividad. Verifique la conexión o intente recargar la página.");
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-2 sm:p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}></div>
-      <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden animate-in fade-in zoom-in duration-200">
-        <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-          <div>
-            <h3 className="text-xl font-bold text-slate-900">
+      <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[95vh] sm:max-h-[90vh]">
+        <div className="px-6 sm:px-8 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
+          <div className="min-w-0 pr-4">
+            <h3 className="text-lg sm:text-xl font-bold text-slate-900 truncate">
               {initialData ? 'Editar Actividad' : 'Nueva Actividad'}
             </h3>
-            <p className="text-xs text-slate-500 font-medium">Registro de labores, sobretiempos y viáticos - Central 4357</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 font-medium truncate">Labores, sobretiempos y viáticos</p>
           </div>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-200 transition-colors">
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-200 transition-colors shrink-0">
             <X size={20} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-8 space-y-6 max-h-[85vh] overflow-y-auto custom-scrollbar">
+        <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-6 overflow-y-auto custom-scrollbar flex-1">
           {errorPrompt && (
             <div className="p-4 bg-red-50 rounded-xl border border-red-100 flex items-start gap-3 animate-in slide-in-from-top-2">
               <AlertCircle size={18} className="text-red-500 mt-0.5 shrink-0" />
@@ -141,7 +197,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Título de la Actividad</label>
               <input
@@ -176,51 +232,90 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
               />
             </div>
             <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Región</label>
+              <input
+                required
+                type="text"
+                className="input-field"
+                placeholder="Ej: Central"
+                value={formData.region}
+                onChange={e => setFormData({ ...formData, region: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Fecha de Ejecución</label>
               <input
                 required
                 type="date"
                 className="input-field"
                 max={todayStr}
-                value={formData.date instanceof Date ? formData.date.toISOString().split('T')[0] : ''}
-                onChange={e => setFormData({ ...formData, date: new Date(e.target.value + 'T00:00:00') })}
+                value={(function() {
+                  try {
+                    return formData.date instanceof Date && !isNaN(formData.date.getTime()) 
+                      ? formData.date.toISOString().split('T')[0] 
+                      : '';
+                  } catch (e) {
+                    return '';
+                  }
+                })()}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (val) {
+                    setFormData({ ...formData, date: new Date(val + 'T00:00:00') });
+                  }
+                }}
               />
             </div>
           </div>
 
           <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Descripción de las Labores</label>
+            <div className="flex justify-between items-center">
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Descripción de las Labores</label>
+              <span className={cn(
+                "text-[10px] font-bold",
+                formData.description.length > 1400 ? "text-red-500" : "text-slate-400"
+              )}>
+                {formData.description.length} / 1500
+              </span>
+            </div>
             <textarea
               required
-              rows={3}
-              className="input-field resize-none"
+              rows={4}
+              maxLength={1500}
+              className="input-field resize-none h-32"
               placeholder="Describa las labores realizadas con precisión técnica para el reporte administrativo..."
               value={formData.description}
               onChange={e => setFormData({ ...formData, description: e.target.value })}
             />
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Tipo</label>
-              <select className="input-field" value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value as any })}>
-                <option value="datos">Datos</option>
-                <option value="provisión">Provisión</option>
-                <option value="transmisión">Transmisión</option>
-                <option value="otro">Otro</option>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">Entrada Mañana</label>
+              <input required type="time" className="input-field text-sm" value={formData.startTimeMorning} onChange={e => setFormData({ ...formData, startTimeMorning: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">Salida Mañana</label>
+              <input required type="time" className="input-field text-sm" value={formData.endTimeMorning} onChange={e => setFormData({ ...formData, endTimeMorning: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">Pausa</label>
+              <select className="input-field text-sm" value={formData.hasPause} onChange={e => setFormData({ ...formData, hasPause: e.target.value })}>
+                <option value="SI">SI</option>
+                <option value="NO">NO</option>
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Hora Inicio</label>
-              <input required type="time" className="input-field" value={formData.startTime} onChange={e => setFormData({ ...formData, startTime: e.target.value })} />
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">Entrada Tarde</label>
+              <input required type="time" className="input-field text-sm" value={formData.startTimeAfternoon} onChange={e => setFormData({ ...formData, startTimeAfternoon: e.target.value })} />
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Hora Fin</label>
-              <input required type="time" className="input-field" value={formData.endTime} onChange={e => setFormData({ ...formData, endTime: e.target.value })} />
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">Salida Tarde</label>
+              <input required type="time" className="input-field text-sm" value={formData.endTimeAfternoon} onChange={e => setFormData({ ...formData, endTimeAfternoon: e.target.value })} />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="p-5 border border-slate-100 rounded-3xl bg-slate-50/50 space-y-4 md:col-span-1">
               <div className="flex items-center justify-between">
                 <label className="text-[11px] font-extrabold text-slate-600 uppercase tracking-widest">Viáticos</label>
@@ -233,7 +328,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
               </div>
               {formData.hasPerDiem && (
                 <div className="space-y-1 animate-in slide-in-from-top-2 duration-200">
-                  <label className="text-[10px] font-bold text-slate-400 italic">Monto Estimado</label>
+                  <label className="text-[10px] font-bold text-slate-400 italic">Monto Estimado (Bs.)</label>
                   <input
                     required
                     type="number"
@@ -270,10 +365,16 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
                       )}
                     >
                       <div className={cn(
-                        "w-2 h-2 rounded-full",
+                        "w-2 h-2 rounded-full shrink-0",
                         formData.participants.includes(tech.name) ? "bg-white" : "bg-slate-300"
                       )} />
-                      <span className="text-xs font-bold truncate">{tech.name}</span>
+                      <div className="flex flex-col overflow-hidden">
+                        <span className="text-xs font-bold truncate">{tech.name}</span>
+                        <span className={cn(
+                          "text-[9px] font-mono",
+                          formData.participants.includes(tech.name) ? "text-white/80" : "text-slate-400"
+                        )}>{tech.employeeId}</span>
+                      </div>
                     </button>
                   ))
                 )}

@@ -15,11 +15,31 @@
   --radius-xl: 1rem;
   --radius-2xl: 1.5rem;
   --radius-3xl: 2rem;
+
+  @keyframes gradient-x {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  @keyframes pulse-slow {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(0.95); }
+  }
+}
+
+.animate-gradient-x {
+  animation: gradient-x 3s ease infinite;
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 @layer base {
   body {
     @apply bg-slate-100 text-slate-900 font-sans antialiased min-h-screen relative;
+    background-image: radial-gradient(circle at 50% 0%, rgba(15, 23, 42, 0.03) 0%, transparent 70%);
   }
 
   body::before {
@@ -29,13 +49,10 @@
     left: 0;
     width: 100%;
     height: 100%;
-    background-image: url('https://images.unsplash.com/photo-1544197150-b99a580bb7a8?q=80&w=2670&auto=format&fit=crop');
-    background-size: cover;
-    background-position: center;
-    opacity: 0.05;
+    background-image: url('https://www.transparenttextures.com/patterns/cubes.png');
+    opacity: 0.03;
     pointer-events: none;
     z-index: -1;
-    mix-blend-mode: multiply;
   }
 }
 
@@ -62,7 +79,7 @@
   }
 
   .glass-card {
-    @apply bg-white/95 border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.06)] backdrop-blur-md rounded-3xl transition-all;
+    @apply bg-white border border-slate-200/80 shadow-[0_4px_20px_rgba(0,0,0,0.03),0_20px_50px_rgba(0,0,0,0.08)] rounded-3xl transition-all;
   }
   
   .btn-primary {

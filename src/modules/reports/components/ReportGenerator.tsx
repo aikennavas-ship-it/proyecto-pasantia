@@ -1,13 +1,13 @@
 import React from 'react';
 import { Download, FileText, Table, Users, Filter, Calendar, ChevronRight, Archive, History, X, Clock, MapPin, Wrench } from 'lucide-react';
-import { Activity, Technician } from '../types';
+import { Activity, Technician } from '../../../types';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, getYear, getMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { cn } from '../lib/utils';
-import { formatHours } from './ActivityForm';
+import { cn } from '../../../lib/utils';
+import { formatHours } from '../../activities/components/ActivityForm';
 
 interface ReportGeneratorProps {
   activities: Activity[];
@@ -33,8 +33,33 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
     return date.getFullYear() === selectedYear && date.getMonth() === selectedMonth;
   });
 
+  const checkActivitiesCompleteness = (activitiesToExport: Activity[]) => {
+    return activitiesToExport.filter(a => {
+      const hasBasicInfo = a.title && a.description && a.date;
+      const hasAdminInfo = a.incidentNumber && a.fleet;
+      const hasTimes = (a.startTime && a.endTime) || (a.startTimeMorning && a.endTimeMorning);
+      const hasTechs = (a.participants && a.participants.length > 0) || a.technicianName;
+      const perDiemOk = !a.hasPerDiem || (a.perDiemAmount !== undefined && a.perDiemAmount > 0);
+      
+      const isComplete = !!(hasBasicInfo && hasAdminInfo && hasTimes && hasTechs && perDiemOk);
+      return !isComplete;
+    });
+  };
+
   const generateSobretiempoExcel = () => {
-    // 1. Prepare Data for "Registro de Labores y Horarios" Mega-Sheet
+    if (filteredActivities.length === 0) return;
+
+    try {
+      const incomplete = checkActivitiesCompleteness(filteredActivities);
+      if (incomplete.length > 0) {
+        const confirmExport = window.confirm(
+          `¡Atención! Se han detectado ${incomplete.length} actividades con información incompleta en este periodo (faltan incidentes, flota, horarios o técnicos).\n\n` +
+          `¿Desea continuar con la exportación a Excel de todos modos?`
+        );
+        if (!confirmExport) return;
+      }
+
+      // 1. Prepare Data for "Registro de Labores y Horarios" Mega-Sheet
     const transmissionTechs = technicians.filter(t => t.status === 'activo' && (t.specialty || '').toLowerCase().includes('transmisión'));
     const datosTechs = technicians.filter(t => t.status === 'activo' && (t.specialty || '').toLowerCase().includes('datos'));
     const otherTechs = technicians.filter(t => t.status === 'activo' && !transmissionTechs.includes(t) && !datosTechs.includes(t));
@@ -53,7 +78,7 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
     // Header Row 2: Tech Names & Extended Columns
     const headerRow2 = [
       'FECHA', 'FLOTA', 'INCIDENTE', 
-      ...allActiveTechs.map(t => t.name.split(' ')[0].toUpperCase()),
+      ...allActiveTechs.map(t => (t.name || 'S/N').split(' ')[0].toUpperCase()),
       'DOCUMENTACION', 'SOBRETIEMPO', 'Hora Entrada Mañana', 'Hora Salida Mañana', 'Pausa', 'Hora Entrada Tarde', 'Hora Salida Tarde', 'JUSTIFIQUE'
     ];
 
@@ -135,7 +160,7 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
         stats.horas.toFixed(1),
         stats.manejo,
         stats.viaticos,
-        stats.depto.toUpperCase()
+        (stats.depto || 'OTRO').toUpperCase()
       ]);
     });
     
@@ -143,12 +168,26 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
     XLSX.utils.book_append_sheet(wb, ws2, "Viáticos y Manejo");
 
     XLSX.writeFile(wb, `SOBRETIEMPO_${months[selectedMonth].toUpperCase()}_${selectedYear}_TX_DX.xlsx`);
+    } catch (err) {
+      console.error("Error generating Excel report:", err);
+      alert("Error al generar el archivo Excel.");
+    }
   };
 
   const generateConsolidatedPDF = () => {
     if (filteredActivities.length === 0) return;
-    
-    const docPdf = new jsPDF();
+
+    try {
+      const incomplete = checkActivitiesCompleteness(filteredActivities);
+      if (incomplete.length > 0) {
+        const confirmExport = window.confirm(
+          `¡Atención! Se han detectado ${incomplete.length} actividades con información incompleta en este periodo.\n\n` +
+          `¿Desea continuar con la generación del PDF de todos modos?`
+        );
+        if (!confirmExport) return;
+      }
+      
+      const docPdf = new jsPDF();
     const pageWidth = docPdf.internal.pageSize.width;
     
     // CANTV Header Design
@@ -214,6 +253,10 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
     }
 
     docPdf.save(`REPORTE_CANTV_${months[selectedMonth].toUpperCase()}_${selectedYear}.pdf`);
+    } catch (err) {
+      console.error("Error generating PDF:", err);
+      alert("Error al generar el reporte PDF.");
+    }
   };
 
   const generateMonthlyExcel = () => {
@@ -223,20 +266,20 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 glass-card p-6">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 bg-brand-blue rounded-2xl flex items-center justify-center text-white shadow-lg shadow-brand-blue/30">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 bg-white p-4 sm:p-6 rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02),0_15px_35px_rgba(0,0,0,0.06)] border border-slate-200">
+        <div className="flex items-center gap-4 w-full">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 bg-brand-blue rounded-2xl flex items-center justify-center text-white shadow-lg shadow-brand-blue/30 shrink-0">
             <Archive size={28} />
           </div>
-          <div>
-            <h2 className="text-xl font-display font-black text-slate-900 tracking-tight">Historial de Reportes Inteligentes</h2>
-            <p className="text-xs text-slate-500 font-medium">Gestión administrativa por Mes y Año · CANTV</p>
+          <div className="min-w-0">
+            <h2 className="text-xl font-display font-black text-slate-900 tracking-tight truncate">Historial de Reportes</h2>
+            <p className="text-xs text-slate-500 font-medium truncate">Gestión administrativa · CANTV</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-2xl border border-slate-200">
+        <div className="flex items-center bg-slate-50 p-1 rounded-2xl border border-slate-200 shrink-0 ml-auto">
           <select 
-            className="bg-transparent border-none text-xs font-black uppercase tracking-widest text-slate-600 focus:ring-0 cursor-pointer px-4 py-2"
+            className="bg-transparent border-none text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-600 focus:ring-0 cursor-pointer px-3 sm:px-4 py-2 text-center min-w-[100px] sm:min-w-[120px]"
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
           >
@@ -244,7 +287,7 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
           </select>
           <div className="w-px h-4 bg-slate-200" />
           <select 
-            className="bg-transparent border-none text-xs font-black uppercase tracking-widest text-slate-600 focus:ring-0 cursor-pointer px-4 py-2"
+            className="bg-transparent border-none text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-600 focus:ring-0 cursor-pointer px-3 sm:px-4 py-2 text-center min-w-[80px]"
             value={selectedYear}
             onChange={(e) => setSelectedYear(parseInt(e.target.value))}
           >
@@ -307,11 +350,14 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
                 const d = new Date(selectedYear, selectedMonth, day);
                 if (d.getMonth() !== selectedMonth) return null;
                 
-                const dayActs = filteredActivities.filter(a => a.date.toDate().getDate() === day);
+                const dayActs = filteredActivities.filter(a => {
+                  const aDate = a.date.toDate();
+                  return aDate.getDate() === day;
+                });
                 
                 return (
                   <div 
-                    key={day} 
+                    key={`report-day-${selectedYear}-${selectedMonth}-${day}`} 
                     onClick={() => dayActs.length > 0 && setSelectedDayActivities({ date: d, activities: dayActs })}
                     className={cn(
                     "p-4 rounded-2xl border transition-all flex items-center justify-between group",
@@ -440,7 +486,7 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
                             )}
                             {activity.hasPerDiem && (
                               <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
-                                ${activity.perDiemAmount}
+                                Bs.{activity.perDiemAmount}
                               </span>
                             )}
                           </div>

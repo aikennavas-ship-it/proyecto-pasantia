@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mail, Lock, ArrowRight, Facebook, Twitter, Instagram, Youtube, Globe, UserPlus, LogIn } from 'lucide-react';
+import { Mail, Lock, ArrowRight, Globe, UserPlus, LogIn } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface LoginProps {
@@ -13,18 +13,23 @@ interface LoginProps {
 export default function Login({ onLogin, onRegister, onForgotPassword, loading, error }: LoginProps) {
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
-  const [isRegistering, setIsRegistering] = React.useState(false);
   const [isForgotPassword, setIsForgotPassword] = React.useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (isForgotPassword) {
       onForgotPassword(email);
-    } else if (isRegistering) {
-      onRegister(email, password);
     } else {
       onLogin(email, password);
     }
+  };
+
+  const fillTestCredentials = (role: 'admin' | 'supervisor' | 'tecnico') => {
+    if (role === 'admin') setEmail('vinumsanguinisetlacrimarum3@gmail.com');
+    if (role === 'supervisor') setEmail('supervisor@cantv.com.ve');
+    if (role === 'tecnico') setEmail('tecnico@cantv.com.ve');
+    
+    setPassword('Cantv123.');
   };
 
   return (
@@ -57,19 +62,14 @@ export default function Login({ onLogin, onRegister, onForgotPassword, loading, 
 
           <div className="space-y-4">
             <h1 className="text-7xl lg:text-8xl font-display font-black text-white leading-[0.9] tracking-tighter whitespace-pre-line">
-              {isForgotPassword ? 'Restablecer\nAcceso' : isRegistering ? 'Registro de\nPersonal' : 'Bienvenido de\nNuevo'}
+              {isForgotPassword ? 'Restablecer\nAcceso' : 'Bienvenido de\nNuevo'}
             </h1>
             <p className="text-white/80 text-xl max-w-sm leading-relaxed font-medium italic">
               "Conectando a Venezuela con precisión técnica desde la Central 4357."
             </p>
           </div>
 
-          <div className="flex gap-6 items-center pt-8">
-            <button className="text-white/60 hover:text-white transition-colors"><Facebook size={20} /></button>
-            <button className="text-white/60 hover:text-white transition-colors"><Twitter size={20} /></button>
-            <button className="text-white/60 hover:text-white transition-colors"><Instagram size={20} /></button>
-            <button className="text-white/60 hover:text-white transition-colors"><Youtube size={20} /></button>
-          </div>
+          {/* Social icons removed per user request */}
         </motion.div>
 
         {/* Right Side: Login Form */}
@@ -86,13 +86,13 @@ export default function Login({ onLogin, onRegister, onForgotPassword, loading, 
               <header className="mb-10">
                 <AnimatePresence mode="wait">
                   <motion.div
-                    key={isForgotPassword ? 'forgot' : isRegistering ? 'reg' : 'log'}
+                    key={isForgotPassword ? 'forgot' : 'log'}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
                   >
                       <h2 className="text-3xl font-display font-black text-white tracking-tight mb-2">
-                         {isForgotPassword ? 'Contraseña' : isRegistering ? 'Registrarse' : 'Iniciar Sesión'}
+                         {isForgotPassword ? 'Contraseña' : 'Iniciar Sesión'}
                       </h2>
                       <div className="h-1.5 w-12 bg-brand-red rounded-full" />
                   </motion.div>
@@ -107,6 +107,14 @@ export default function Login({ onLogin, onRegister, onForgotPassword, loading, 
                 )}
 
                 <div className="space-y-4">
+                  {!isForgotPassword && (
+                    <div className="grid grid-cols-3 gap-2 mb-6">
+                      <button type="button" onClick={() => fillTestCredentials('admin')} className="py-2 px-1 text-[9px] font-bold uppercase tracking-wider bg-white/5 hover:bg-brand-blue/20 text-white/70 hover:text-white rounded-lg border border-white/10 transition-colors">Admin</button>
+                      <button type="button" onClick={() => fillTestCredentials('supervisor')} className="py-2 px-1 text-[9px] font-bold uppercase tracking-wider bg-white/5 hover:bg-brand-blue/20 text-white/70 hover:text-white rounded-lg border border-white/10 transition-colors">Supervisor</button>
+                      <button type="button" onClick={() => fillTestCredentials('tecnico')} className="py-2 px-1 text-[9px] font-bold uppercase tracking-wider bg-white/5 hover:bg-brand-blue/20 text-white/70 hover:text-white rounded-lg border border-white/10 transition-colors">Técnico</button>
+                    </div>
+                  )}
+
                   <div className="space-y-1 group">
                     <label className="text-[11px] font-black text-white/50 uppercase tracking-widest ml-1">Correo Electrónico</label>
                     <div className="relative">
@@ -146,15 +154,13 @@ export default function Login({ onLogin, onRegister, onForgotPassword, loading, 
                       <input type="checkbox" className="w-4 h-4 rounded border-white/20 bg-black/40 text-brand-blue focus:ring-brand-blue/20" />
                       <span className="text-xs font-medium">Recordarme</span>
                     </label>
-                    {!isRegistering && (
-                      <button 
-                        type="button" 
-                        onClick={() => setIsForgotPassword(true)}
-                        className="text-xs text-white/60 hover:text-white underline underline-offset-4 transition-colors font-bold"
-                      >
-                        ¿Olvidaste tu contraseña?
-                      </button>
-                    )}
+                    <button 
+                      type="button" 
+                      onClick={() => setIsForgotPassword(true)}
+                      className="text-xs text-white/60 hover:text-white underline underline-offset-4 transition-colors font-bold"
+                    >
+                      ¿Olvidaste tu contraseña?
+                    </button>
                   </div>
                 )}
 
@@ -169,30 +175,18 @@ export default function Login({ onLogin, onRegister, onForgotPassword, loading, 
                       <span>Cargando...</span>
                     </div>
                   ) : (
-                    <span>{isForgotPassword ? 'Restablecer' : isRegistering ? 'Registrar' : 'Ingresar'}</span>
+                    <span>{isForgotPassword ? 'Restablecer' : 'Ingresar'}</span>
                   )}
                 </button>
 
                 <div className="pt-4 text-center space-y-3">
-                  {isForgotPassword ? (
+                  {isForgotPassword && (
                     <button
                       type="button"
                       onClick={() => setIsForgotPassword(false)}
                       className="text-xs text-white/60 hover:text-white flex items-center justify-center gap-2 mx-auto group transition-colors"
                     >
                       <ArrowRight size={14} className="rotate-180 group-hover:-translate-x-1 transition-transform" /> Volver al inicio
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setIsRegistering(!isRegistering)}
-                      className="text-xs text-white/60 hover:text-white flex items-center justify-center gap-2 mx-auto group transition-colors"
-                    >
-                      {isRegistering ? (
-                        <><LogIn size={14} className="group-hover:-translate-x-1 transition-transform" /> Ya tengo cuenta</>
-                      ) : (
-                        <><UserPlus size={14} className="group-hover:translate-y-1 transition-transform" /> Crear una nueva cuenta</>
-                      )}
                     </button>
                   )}
                 </div>

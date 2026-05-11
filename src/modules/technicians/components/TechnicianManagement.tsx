@@ -1,7 +1,18 @@
+/**
+ * src/modules/technicians/components/TechnicianManagement.tsx
+ * 
+ * TECHNICIANS MODULE - Gestión de Personal
+ * -----------------------------------------
+ * Componente principal del módulo de Técnicos. Permite crear, listar, editar
+ * y dar de baja (eliminación lógica) al personal.
+ * 
+ * Nota: Siguiendo Screaming Architecture, este módulo aísla por completo 
+ * la manipulación de la colección 'technicians'.
+ */
 import React from 'react';
 import { UserPlus, Search, Shield, BadgeCheck, X, Briefcase, Trash2, Edit2, Phone } from 'lucide-react';
-import { Technician } from '../types';
-import { cn } from '../lib/utils';
+import { Technician } from '../../../types';
+import { cn } from '../../../lib/utils';
 import TechnicianForm from './TechnicianForm';
 
 interface TechnicianManagementProps {
@@ -23,23 +34,23 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/70 backdrop-blur-md p-6 rounded-[2rem] shadow-sm border border-slate-200/60">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 bg-brand-blue rounded-2xl flex items-center justify-center text-white shadow-lg shadow-brand-blue/30">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 bg-white p-6 rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02),0_15px_35px_rgba(0,0,0,0.06)] border border-slate-200">
+        <div className="flex items-center gap-4 w-full">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 bg-brand-blue rounded-2xl flex items-center justify-center text-white shadow-lg shadow-brand-blue/30 shrink-0">
             <Shield size={28} />
           </div>
-          <div>
-            <h2 className="text-xl font-display font-black text-slate-900 tracking-tight">Personal Técnico</h2>
-            <p className="text-xs text-slate-500 font-medium">Gestión administrativa de Datos y Transmisión</p>
+          <div className="min-w-0">
+            <h2 className="text-xl font-display font-black text-slate-900 tracking-tight truncate">Personal y Accesos</h2>
+            <p className="text-xs text-slate-500 font-medium truncate">Control de Usuarios - Gerencia de Datos</p>
           </div>
         </div>
         {onAddTechnician && (
           <button 
             onClick={() => setIsFormOpen(true)}
-            className="btn-primary"
+            className="w-full sm:w-auto px-6 py-2.5 bg-brand-blue text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-brand-blue/20 hover:bg-brand-blue-dark active:scale-[0.98] transition-all flex items-center justify-center gap-2"
           >
             <UserPlus size={18} />
-            <span>Registrar Técnico</span>
+            <span>Registrar Nuevo</span>
           </button>
         )}
       </div>
@@ -62,10 +73,11 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50 text-[11px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                <th className="px-6 py-4">Técnico</th>
-                <th className="px-6 py-4">Carnet / ID</th>
-                <th className="px-6 py-4">Especialidad</th>
+              <tr className="bg-slate-100/80 text-[11px] font-bold text-slate-500 uppercase tracking-widest border-b-2 border-slate-200">
+                <th className="px-6 py-4">Usuario / Técnico</th>
+                <th className="px-6 py-4">Rol Sistema</th>
+                <th className="px-6 py-4">P00</th>
+                <th className="px-6 py-4">C.I</th>
                 <th className="px-6 py-4">Estado</th>
                 <th className="px-6 py-4 text-right">Acciones</th>
               </tr>
@@ -74,12 +86,12 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
               {isLoading ? (
                 [1,2,3].map(i => (
                   <tr key={i} className="animate-pulse">
-                    <td colSpan={5} className="px-6 py-4 h-16 bg-slate-50/30"></td>
+                    <td colSpan={6} className="px-6 py-4 h-16 bg-slate-50/30"></td>
                   </tr>
                 ))
               ) : filteredTechs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
+                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400 italic">
                     No se encontraron técnicos registrados.
                   </td>
                 </tr>
@@ -93,22 +105,32 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
                         </div>
                         <div>
                           <p className="font-bold text-slate-900 leading-none">{tech.name}</p>
-                          <p className="text-[10px] text-slate-500 font-medium mt-1">Ingresado: {tech.createdAt?.toDate().toLocaleDateString()}</p>
+                          <p className="text-[10px] text-slate-500 font-mono mt-1">{tech.email}</p>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">
-                        {tech.employeeId}
+                      <span className={cn(
+                        "text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border",
+                        tech.role === 'admin' ? "bg-purple-50 text-purple-600 border-purple-100" : 
+                        tech.role === 'supervisor' ? "bg-brand-blue/5 text-brand-blue border-brand-blue/10" : 
+                        tech.role === 'none' ? "bg-amber-50 text-amber-600 border-amber-100" :
+                        "bg-slate-50 text-slate-500 border-slate-100"
+                      )}>
+                        {tech.role === 'admin' ? 'Administrador' : tech.role === 'supervisor' ? 'Supervisor' : tech.role === 'none' ? 'Estadística' : 'Técnico'}
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center gap-2 text-slate-600">
-                        <Briefcase size={14} className="text-slate-400" />
-                        <span className="text-sm font-medium">{tech.specialty}</span>
-                      </div>
+                      <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">
+                        {tech.employeeId || 'S/N'}
+                      </span>
                     </td>
                     <td className="px-6 py-4">
+                      <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">
+                        {tech.idCard || 'S/N'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
                       <span className={cn(
                         "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full",
                         tech.status === 'activo' ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"
@@ -161,7 +183,9 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
                     </div>
                     <div>
                       <p className="font-black text-slate-900 leading-none">{tech.name}</p>
-                      <p className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-wider">{tech.employeeId}</p>
+                      <p className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-wider">
+                        P00: {tech.employeeId || 'S/N'} <span className="opacity-50">|</span> C.I: {tech.idCard || 'S/N'}
+                      </p>
                     </div>
                   </div>
                   <span className={cn(
