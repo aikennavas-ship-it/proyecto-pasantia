@@ -48,7 +48,7 @@ export interface Technician {
   name: string;
   employeeId: string;
   email?: string;
-  role?: 'admin' | 'supervisor' | 'tecnico' | 'none';
+  role?: 'admin' | 'supervisor' | 'tecnico';
   idCard?: string;
   specialty: string;
   phoneNumber?: string;

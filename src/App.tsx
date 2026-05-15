@@ -51,7 +51,7 @@ import ConfirmationModal from './modules/core/components/ConfirmationModal';
 import RecycleBin from './modules/recycle-bin/components/RecycleBin';
 import TechnicianForm from './modules/technicians/components/TechnicianForm';
 
-import { Plus, Search, Filter, ClipboardList, Settings, Download, FileText, Table, Users, Target, Eye, ShieldCheck, History, LayoutGrid, List, Camera, UserCircle, Check, X, Loader2 } from 'lucide-react';
+import { Plus, Search, Filter, ClipboardList, Settings, Download, FileText, Table, Users, Target, Eye, ShieldCheck, History, LayoutGrid, List, Camera, UserCircle, Check, X, Loader2, Database } from 'lucide-react';
 import { cn } from './lib/utils';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -962,14 +962,36 @@ export default function App() {
       {activeTab === 'settings' && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="glass-card p-8 max-w-4xl mx-auto border-none shadow-2xl">
-            <div className="flex items-center gap-4 mb-10 pb-6 border-b border-slate-100">
-              <div className="w-14 h-14 bg-brand-blue/10 rounded-2xl flex items-center justify-center text-brand-blue shadow-inner">
-                <Settings size={32} />
+            <div className="flex items-center justify-between gap-4 mb-10 pb-6 border-b border-slate-100">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 bg-brand-blue/10 rounded-2xl flex items-center justify-center text-brand-blue shadow-inner">
+                  <Settings size={32} />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-display font-black text-slate-900 tracking-tight uppercase">Configuración Personalizada</h3>
+                  <p className="text-sm text-slate-500 font-bold uppercase tracking-widest">Gestión de identidad y preferencias del sistema</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-2xl font-display font-black text-slate-900 tracking-tight uppercase">Configuración Personalizada</h3>
-                <p className="text-sm text-slate-500 font-bold uppercase tracking-widest">Gestión de identidad y preferencias del sistema</p>
-              </div>
+              {isGeneralAdmin && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (window.confirm("¿Seguro que desea generar información de prueba en la base de datos?")) {
+                      try {
+                        const { seedDummyData } = await import('./lib/seedDummyData');
+                        await seedDummyData(user?.uid || '');
+                        alert('Data de prueba insertada. Recargue la página para verla');
+                      } catch (err) {
+                        console.error(err);
+                        alert('Error');
+                      }
+                    }
+                  }}
+                  className="bg-brand-blue/10 text-brand-blue hover:bg-brand-blue/20 font-bold py-2 px-4 rounded-xl transition-all flex items-center gap-2"
+                >
+                  <Database size={16} /> Data Dummy
+                </button>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-12">

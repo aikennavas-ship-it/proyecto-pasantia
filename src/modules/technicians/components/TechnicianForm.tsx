@@ -16,11 +16,16 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
   const initialStatusVal = (initialData?.status || 'activo').toLowerCase();
   const isCustomStatus = !predefinedStatuses.includes(initialStatusVal);
 
+  const parts = (initialData?.name || '').split(' ');
+  const initFirstName = parts.length > 1 ? parts.slice(0, Math.ceil(parts.length / 2)).join(' ') : parts[0] || '';
+  const initLastName = parts.length > 1 ? parts.slice(Math.ceil(parts.length / 2)).join(' ') : '';
+
   const [data, setData] = React.useState({
-    name: initialData?.name || '',
+    firstName: initFirstName,
+    lastName: initLastName,
     employeeId: initialData?.employeeId || '',
     idCard: initialData?.idCard || 'V-',
-    specialty: initialData?.specialty || '', // Empty by default since it is free text now
+    specialty: initialData?.specialty || '',
     phoneNumber: initialData?.phoneNumber || '',
     status: isCustomStatus ? 'otro' : initialStatusVal,
     customStatus: isCustomStatus ? (initialData?.status || '') : '',
@@ -39,22 +44,54 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
 
     // Check missing fields
     const isNew = !initialData;
-    if (!data.name || !data.employeeId || !data.idCard || !data.specialty || !data.phoneNumber || !finalStatus || !data.email || (isNew && !data.password)) {
-      setErrorPrompt('Por favor, rellene todos los campos requeridos del formulario (incluyendo el correo y contraseña).');
+    const isTecho = data.systemRole === 'tecnico';
+    
+    if (!data.firstName || !data.lastName || !data.employeeId || !data.idCard || !data.specialty || !data.phoneNumber || !finalStatus || !data.email || (isNew && !isTecho && !data.password)) {
+      setErrorPrompt('Por favor, rellene todos los campos requeridos del formulario.');
+      return;
+    }
+
+    // Validation: Names only letters
+    const nameRegex = /^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]+$/;
+    if (!nameRegex.test(data.firstName) || !nameRegex.test(data.lastName)) {
+      setErrorPrompt('Los nombres y apellidos solo deben contener letras.');
+      return;
+    }
+
+    // Validation: POO exactly 6 digits
+    if (!/^\d{6}$/.test(data.employeeId)) {
+      setErrorPrompt('El POO / Carnet debe ser exactamente de 6 dígitos.');
       return;
     }
 
     // Validation: ID Card (V- + 8 digits)
     const idRegex = /^[VE]-\d{8}$/;
     if (!idRegex.test(data.idCard)) {
-      setErrorPrompt('Cédula inválida. Debe seguir el formato exacto V-12345678 (V- seguido de 8 números).');
+      setErrorPrompt('Cédula inválida. Debe seguir el formato exacto V-12345678 (máximo de 10 caracteres).');
       return;
     }
 
     // Validation: Phone Number (>= 12 chars and must have -)
-    if (data.phoneNumber.length < 12 || !data.phoneNumber.includes('-')) {
-      setErrorPrompt('Número de teléfono inválido. Debe tener al menos 12 caracteres y un guión (-) separador (Ej: 0412-1234567).');
+    const phoneRegex = /^\d{4}-\d{7}$/;
+    if (!phoneRegex.test(data.phoneNumber)) {
+      setErrorPrompt('Número de teléfono inválido. Debe tener 12 caracteres incluyendo un guión (Ej: 0414-1234567).');
       return;
+    }
+    
+    // Validation: Password for Supervisors/Admins
+    if (isNew && !isTecho) {
+      if (data.password.length < 10 || data.password.length > 64) {
+        setErrorPrompt('La contraseña debe tener entre 10 y 64 caracteres.');
+        return;
+      }
+      const hasUpper = /[A-Z]/.test(data.password);
+      const hasLower = /[a-z]/.test(data.password);
+      const hasNumber = /[0-9]/.test(data.password);
+      const hasSpecial = /[!@#\$%\^&\*\(\)_\+\-\=\[\]\{\};':"\\|,.<>\/\?¡¿]/.test(data.password);
+      if (!hasUpper || !hasLower || !hasNumber || !hasSpecial) {
+        setErrorPrompt('La contraseña debe contener mayúsculas, minúsculas, números y caracteres especiales.');
+        return;
+      }
     }
 
     // Check duplicate ID
@@ -67,8 +104,10 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
       return;
     }
 
+    const fullName = `${data.firstName.trim()} ${data.lastName.trim()}`;
+
     onSubmit({
-      name: data.name,
+      name: fullName,
       employeeId: data.employeeId,
       idCard: data.idCard,
       specialty: data.specialty,
@@ -101,7 +140,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
           )}
           
           <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Correo Institucional (Login)</label>
+            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Correo Institucional</label>
             <input
               required
               type="email"
@@ -112,18 +151,19 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
             />
           </div>
 
-          {!initialData && (
+          {!initialData && data.systemRole !== 'tecnico' && (
             <div className="space-y-1 animate-in slide-in-from-top-2">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Contraseña de Acceso</label>
               <input
                 required
                 type="password"
                 className="input-field"
-                placeholder="Mínimo 6 caracteres"
+                placeholder="Mínimo 10 caracteres"
+                maxLength={64}
                 value={data.password}
                 onChange={e => setData({ ...data, password: e.target.value })}
               />
-              <p className="text-[9px] text-slate-400 font-medium ml-1">Asigne una clave inicial para este usuario.</p>
+              <p className="text-[9px] text-slate-400 font-medium ml-1">Debe incluir mayúsculas, minúsculas, números y caracteres especiales (ej: @, #, $, *).</p>
             </div>
           )}
 
@@ -135,28 +175,40 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
               value={data.systemRole}
               onChange={e => setData({ ...data, systemRole: e.target.value as any })}
             >
-              <option value="tecnico">Técnico (Usuario estándar)</option>
-              <option value="supervisor">Supervisor (Gestión y reportes)</option>
-              <option value="none">Ninguno (Solo estadística)</option>
+              <option value="tecnico">Técnico</option>
+              <option value="supervisor">Supervisor</option>
               {initialData?.role === 'admin' && <option value="admin">Administrador General</option>}
             </select>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Nombre Completo</label>
-            <input
-              required
-              className="input-field"
-              placeholder="Ej: Pedro José Pérez"
-              value={data.name}
-              onChange={e => setData({ ...data, name: e.target.value })}
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Nombres</label>
+              <input
+                required
+                className="input-field"
+                placeholder="Ej: Pedro José"
+                value={data.firstName}
+                onChange={e => setData({ ...data, firstName: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Apellidos</label>
+              <input
+                required
+                className="input-field"
+                placeholder="Ej: Pérez García"
+                value={data.lastName}
+                onChange={e => setData({ ...data, lastName: e.target.value })}
+              />
+            </div>
           </div>
 
           <div className="space-y-1">
             <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">P00 / Carnet (Empleado)</label>
             <input
               required
+              maxLength={6}
               className="input-field"
               placeholder="Ej: 107773"
               value={data.employeeId}
@@ -168,6 +220,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
             <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Cédula de Identidad (C.I)</label>
             <input
               required
+              maxLength={10}
               className="input-field"
               placeholder="Ej: V-12345678"
               value={data.idCard}
@@ -187,10 +240,18 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
             <input
               required
               type="tel"
+              maxLength={12}
               className="input-field"
-              placeholder="Ej: 0412-1234567"
+              placeholder="Ej: 0414-1234567"
               value={data.phoneNumber}
-              onChange={e => setData({ ...data, phoneNumber: e.target.value })}
+              onChange={e => {
+                // Auto format phone if they just type numbers
+                let val = e.target.value.replace(/[^\d-]/g, '');
+                if (val.length > 4 && !val.includes('-')) {
+                  val = val.slice(0,4) + '-' + val.slice(4);
+                }
+                setData({ ...data, phoneNumber: val });
+              }}
             />
           </div>
 

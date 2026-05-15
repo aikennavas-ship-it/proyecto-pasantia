@@ -32,7 +32,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
     fleet: initialData?.fleet || '',
     region: initialData?.region || 'Central',
     technicianName: initialData?.technicianName || '',
-    startTimeMorning: initialData?.startTimeMorning || initialData?.startTime || '08:00',
+    startTimeMorning: initialData?.startTimeMorning || initialData?.startTime || '07:45',
     endTimeMorning: initialData?.endTimeMorning || '11:45',
     hasPause: initialData?.hasPause || 'SI',
     startTimeAfternoon: initialData?.startTimeAfternoon || '12:45',
@@ -148,9 +148,30 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
     }
     
     // 4. Overtime (ST) and Deficit (DF) calculation
-    // Base is 7.25 hours as requested (07:45 to 11:45 = 4h, 12:45 to 16:00 = 3.25h)
-    const STANDARD_WORKDAY = 7.25;
-    let overtimeHours = Number((totalWorkedHours - STANDARD_WORKDAY).toFixed(4));
+    // Según instrucciones: Al llegar a las 4:00 PM no hay DF ni ST importando la hora de entrada.
+    // Solo las salidas temprano generan DF, y las salidas tarde generan ST.
+    let virtualMorning = 0;
+    if (formData.startTimeMorning && formData.endTimeMorning) {
+        let em = parseTime(formData.endTimeMorning);
+        if (em < parseTime(formData.startTimeMorning)) em += 24;
+        virtualMorning = (em - 11.75) + 4; // Base de 4h
+    }
+
+    let virtualAfternoon = 0;
+    if (formData.startTimeAfternoon && formData.endTimeAfternoon) {
+        let ea = parseTime(formData.endTimeAfternoon);
+        if (ea < saTime) ea += 24;
+        virtualAfternoon = (ea - 16) + 3.25; // Base de 3.25h
+    }
+
+    let virtualTotal = virtualMorning + virtualAfternoon;
+    let otHours = virtualTotal - 7.25; // Jornada de 7.25h
+
+    if (formData.hasPause === 'NO' && virtualMorning > 0 && virtualAfternoon > 0) {
+        otHours += 1;
+    }
+
+    let overtimeHours = Number(otHours.toFixed(4));
 
     
     // Sanity check for extremely high values (> 24h)

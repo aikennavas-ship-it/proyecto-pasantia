@@ -104,7 +104,7 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
       // Extended tracking columns
       row.push(
         a.incidentNumber ? a.incidentNumber : 'S/N', // DOCUMENTACION
-        (a.overtimeHours || 0) > 0 ? 'SI' : 'no', // SOBRETIEMPO
+        (a.overtimeHours || 0) !== 0 ? formatHours(a.overtimeHours || 0) : '0h', // SOBRETIEMPO
         '', // We leave standard blank or parse real startTime if they wanted system info instead of hardcoded 7:30
         '', // Hora Salida Mañana
         '', // Pausa

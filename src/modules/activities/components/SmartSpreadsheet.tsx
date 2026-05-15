@@ -124,142 +124,274 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
   };
 
   const SortIcon = ({ columnKey }: { columnKey: any }) => {
-    if (!sortConfig || sortConfig.key !== columnKey) return <ArrowUpDown size={12} className="opacity-20 group-hover:opacity-50 transition-opacity" />;
+    if (!sortConfig || sortConfig.key !== columnKey) return <ArrowUpDown size={14} strokeWidth={2.5} className="text-slate-400 group-hover:text-brand-blue transition-colors" />;
     return sortConfig.direction === 'asc' 
-      ? <ArrowUp size={12} className="text-brand-blue" /> 
-      : <ArrowDown size={12} className="text-brand-blue" />;
+      ? <ArrowUp size={14} strokeWidth={3} className="text-brand-blue" /> 
+      : <ArrowDown size={14} strokeWidth={3} className="text-brand-blue" />;
   };
 
-  const exportDayToExcel = async () => {
+  const exportSobretiempoToExcel = async () => {
     if (!sortedActivities || sortedActivities.length === 0) {
-      alert("No hay actividades registradas para esta fecha.");
+      console.warn("No hay actividades registradas para esta fecha.");
       return;
     }
 
     try {
-      // Validation for completeness
-      const incomplete = sortedActivities.filter(a => {
-        const hasBasic = a.title && a.description && a.date;
-        const hasAdmin = a.incidentNumber && a.fleet && a.region;
-        const hasTimes = (a.startTimeMorning && a.endTimeMorning);
-        const hasTechs = (a.participants && a.participants.length > 0) || a.technicianName;
-        return !(hasBasic && hasAdmin && hasTimes && hasTechs);
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet(format(selectedDate, 'dd-MM-yyyy'));
+
+      sheet.columns = [
+        { header: 'AREA', key: 'area', width: 12 },
+        { header: 'P00', key: 'p00', width: 10 },
+        { header: 'Nombres y Apellidos', key: 'name', width: 28 },
+        { header: 'Cedula', key: 'cedula', width: 12 },
+        { header: 'Región', key: 'region', width: 10 },
+        { header: 'Fecha', key: 'fecha', width: 12 },
+        { header: 'Codigo', key: 'codigo', width: 10 },
+        { header: 'Causa', key: 'causa', width: 25 },
+        { header: 'Hora Entrada Mañana', key: 'he_m', width: 18 },
+        { header: 'Hora Salida Mañana', key: 'hs_m', width: 18 },
+        { header: 'Pausa', key: 'pausa', width: 8 },
+        { header: 'Hora Entrada Tarde', key: 'he_t', width: 18 },
+        { header: 'Hora Salida Tarde', key: 'hs_t', width: 18 },
+        { header: 'JUSTIFIQUE', key: 'justifique', width: 45 }
+      ];
+
+      const headerRow = sheet.getRow(1);
+      headerRow.height = 30;
+
+      headerRow.eachCell((cell, colNumber) => {
+        cell.font = { bold: true, color: { argb: colNumber === 1 || colNumber === 14 ? 'FF000000' : 'FFFFFFFF' }, size: 9, name: 'Arial' };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        
+        let fgColor = 'FF4F81BD'; // Blue 
+        
+        if (colNumber === 1) fgColor = 'FFF79646'; // AREA (Orange)
+        if (colNumber >= 9 && colNumber <= 13) fgColor = 'FF5B9BD5'; // Horarios (Lighter Blue)
+        if (colNumber === 14) fgColor = 'FFFCD5B4'; // JUSTIFIQUE (Peach)
+
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fgColor } };
+        cell.border = {
+          top: { style: 'thin' }, left: { style: 'thin' },
+          bottom: { style: 'thin' }, right: { style: 'thin' }
+        };
       });
 
-      if (incomplete.length > 0) {
-        if (!window.confirm(`Se han detectado ${incomplete.length} registros con información incompleta. ¿Desea exportar de todos modos?`)) {
-          return;
-        }
+      sortedActivities.forEach(a => {
+        const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
+        
+        parts.forEach(p => {
+          const techMatch = technicians.find(t => (t.name || '').toLowerCase() === (p || '').toLowerCase());
+          
+          let he_m = a.startTimeMorning ? formatTimeAMPM(a.startTimeMorning) : '07:30 AM';
+          let hs_m = a.endTimeMorning ? formatTimeAMPM(a.endTimeMorning) : '11:45 AM';
+          let pausa = a.hasPause || 'SI';
+          let he_t = a.startTimeAfternoon ? formatTimeAMPM(a.startTimeAfternoon) : '12:45 PM';
+          let hs_t = a.endTimeAfternoon ? formatTimeAMPM(a.endTimeAfternoon) : formatTimeAMPM(a.endTime || '16:00');
+          let region = a.region || 'Central';
+
+          let fechaValue = 'S/N';
+          try {
+            if (a.date) {
+              const d = typeof (a.date as any).toDate === 'function' ? (a.date as any).toDate() : new Date(a.date as any);
+              if (!isNaN(d.getTime())) {
+                fechaValue = format(d, 'dd/MM/yyyy');
+              }
+            }
+          } catch(e) {}
+
+          const row = sheet.addRow({
+            area: techMatch ? (techMatch.specialty || 'DATOS').toUpperCase() : 'DATOS',
+            p00: techMatch && techMatch.employeeId ? techMatch.employeeId : '',
+            name: (p || '').toUpperCase(),
+            cedula: techMatch && (techMatch as any).idCard ? (techMatch as any).idCard : 'S/N',
+            region: region,
+            fecha: fechaValue,
+            codigo: 'PRIM',
+            causa: 'Horas Product. Con Manejo', 
+            he_m, hs_m, pausa, he_t, hs_t,
+            justifique: `${a.incidentNumber ? a.incidentNumber + ' ' : ''}${a.title}`.trim()
+          });
+
+          row.eachCell(cell => {
+            cell.font = { size: 9, name: 'Arial' };
+            cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+            cell.border = {
+              top: { style: 'thin', color: { argb: 'FFD9D9D9' } },
+              left: { style: 'thin', color: { argb: 'FFD9D9D9' } },
+              bottom: { style: 'thin', color: { argb: 'FFD9D9D9' } },
+              right: { style: 'thin', color: { argb: 'FFD9D9D9' } }
+            };
+          });
+
+          row.getCell(3).alignment = { horizontal: 'left', vertical: 'middle' };
+          row.getCell(14).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+          row.height = Math.max(15, Math.ceil((row.getCell(14).text?.length || 10) / 45) * 15);
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      
+      const dayName = format(new Date(), 'EEEE', { locale: es });
+      const day = format(new Date(), 'dd');
+      const monthName = format(new Date(), 'MMMM', { locale: es });
+      const year = format(new Date(), 'yyyy');
+      const dataDate = format(selectedDate, 'dd-MM-yyyy');
+      
+      const fileName = `Sobretiempo_CANTV_${day}_${monthName}_${year}_${dayName}_Generado_De_${dataDate}.xlsx`;
+      saveAs(new Blob([buffer]), fileName);
+    } catch (err: any) {
+      console.error("Error exporting daily Excel:", err);
+      alert("Error al generar Excel: " + (err.message || "Desconocido"));
+    }
+  };
+
+  const exportPlanificacionToExcel = async () => {
+    if (!sortedActivities || sortedActivities.length === 0) {
+      console.warn("No hay actividades registradas para esta fecha.");
+      return;
+    }
+
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet(format(selectedDate, 'dd-MM-yyyy'));
+
+      const transmisionTechs = technicians.filter(t => (t.specialty || '').toLowerCase().includes('transmision') || (t.specialty || '').toLowerCase().includes('transmisión'));
+      const datosTechs = technicians.filter(t => (t.specialty || '').toLowerCase().includes('datos') || (!(t.specialty || '').toLowerCase().includes('transmision') && !(t.specialty || '').toLowerCase().includes('transmisión')));
+      const planTechs = [...transmisionTechs, ...datosTechs];
+
+      const cols = [
+        { header: 'FECHA', key: 'fecha', width: 12 },
+        { header: 'FLOTA', key: 'flota', width: 10 },
+        { header: 'INCIDENTE', key: 'incidente', width: 45 },
+      ];
+      
+      planTechs.forEach(t => {
+        const nameParts = t.name.split(' ');
+        const shortName = nameParts[0].toUpperCase();
+        cols.push({ header: shortName, key: `tech_${t.id}`, width: 10 });
+      });
+
+      cols.push(
+        { header: 'DOCUMENTACION', key: 'doc', width: 15 },
+        { header: 'SOBRETIEMPO', key: 'st', width: 15 },
+        { header: 'Hora Entrada Mañana', key: 'he_m', width: 18 },
+        { header: 'Hora Salida Mañana', key: 'hs_m', width: 18 },
+        { header: 'Pausa', key: 'pausa', width: 10 },
+        { header: 'Hora Entrada Tarde', key: 'he_t', width: 18 },
+        { header: 'Hora Salida Tarde', key: 'hs_t', width: 18 },
+        { header: 'HORAS', key: 'horas', width: 10 },
+        { header: 'MANEJO', key: 'manejo', width: 15 },
+        { header: 'VIATICOS', key: 'viaticos', width: 12 },
+        { header: 'DEPARTAMENTO', key: 'dpto', width: 15 }
+      );
+
+      sheet.columns = cols;
+      sheet.insertRow(1, []);
+
+      if (transmisionTechs.length > 0) {
+        sheet.mergeCells(1, 4, 1, 3 + transmisionTechs.length);
+        const cell = sheet.getCell(1, 4);
+        cell.value = 'TRANSMISION';
+        cell.font = { bold: true, size: 9, name: 'Arial', color: { argb: 'FF000000' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      }
+      
+      if (datosTechs.length > 0) {
+        sheet.mergeCells(1, 4 + transmisionTechs.length, 1, 3 + planTechs.length);
+        const cell = sheet.getCell(1, 4 + transmisionTechs.length);
+        cell.value = 'DATOS';
+        cell.font = { bold: true, size: 9, name: 'Arial', color: { argb: 'FF000000' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
       }
 
-      const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet(format(selectedDate, 'dd-MM-yyyy'));
-
-    sheet.columns = [
-      { header: 'AREA', key: 'area', width: 12 },
-      { header: 'P00', key: 'p00', width: 10 },
-      { header: 'Nombres y Apellidos', key: 'name', width: 28 },
-      { header: 'Cedula', key: 'cedula', width: 12 },
-      { header: 'Región', key: 'region', width: 10 },
-      { header: 'Fecha', key: 'fecha', width: 12 },
-      { header: 'Codigo', key: 'codigo', width: 10 },
-      { header: 'Causa', key: 'causa', width: 25 },
-      { header: 'Hora Entrada Mañana', key: 'he_m', width: 12 },
-      { header: 'Hora Salida Mañana', key: 'hs_m', width: 12 },
-      { header: 'Pausa', key: 'pausa', width: 8 },
-      { header: 'Hora Entrada Tarde', key: 'he_t', width: 12 },
-      { header: 'Hora Salida Tarde', key: 'hs_t', width: 12 },
-      { header: 'JUSTIFIQUE', key: 'justifique', width: 45 }
-    ];
-
-    const headerRow = sheet.getRow(1);
-    headerRow.height = 30;
-
-    headerRow.eachCell((cell, colNumber) => {
-      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 9, name: 'Arial' };
-      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-      
-      let fgColor = 'FF4F81BD'; // Blue 
-      
-      if (colNumber === 1) fgColor = 'FFF79646'; // AREA (Orange)
-      if (colNumber >= 9 && colNumber <= 13) fgColor = 'FF5B9BD5'; // Horarios (Lighter Blue)
-      if (colNumber === 14) fgColor = 'FFFCD5B4'; // JUSTIFIQUE (Peach)
-
-      if (colNumber === 1) cell.font = { bold: true, color: { argb: 'FF000000' }, size: 9, name: 'Arial' };
-      if (colNumber === 14) cell.font = { bold: true, color: { argb: 'FF000000' }, size: 9, name: 'Arial' };
-
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fgColor } };
-      cell.border = {
-        top: { style: 'thin' }, left: { style: 'thin' },
-        bottom: { style: 'thin' }, right: { style: 'thin' }
+      const styleHeader = (rowNum: number) => {
+        const row = sheet.getRow(rowNum);
+        row.eachCell((cell) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00B0F0' } };
+          cell.font = { bold: true, size: 9, name: 'Arial', color: { argb: 'FF000000' } };
+          cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        });
       };
-    });
 
-    sortedActivities.forEach(a => {
-      const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
-      
-      parts.forEach(p => {
-        const techMatch = technicians.find(t => (t.name || '').toLowerCase() === (p || '').toLowerCase());
-        
-        let he_m = a.startTimeMorning ? formatTimeAMPM(a.startTimeMorning) : '07:30 AM';
-        let hs_m = a.endTimeMorning ? formatTimeAMPM(a.endTimeMorning) : '11:45 AM';
-        let pausa = a.hasPause || 'SI';
-        let he_t = a.startTimeAfternoon ? formatTimeAMPM(a.startTimeAfternoon) : '12:45 PM';
-        let hs_t = a.endTimeAfternoon ? formatTimeAMPM(a.endTimeAfternoon) : formatTimeAMPM(a.endTime || '16:00');
-        let region = a.region || 'Central';
+      styleHeader(1);
+      styleHeader(2);
 
-        const row = sheet.addRow({
-          area: techMatch ? (techMatch.specialty || 'DATOS').toUpperCase() : 'DATOS',
-          p00: techMatch && techMatch.employeeId ? techMatch.employeeId : '',
-          name: (p || '').toUpperCase(),
-          cedula: techMatch && (techMatch as any).idCard ? (techMatch as any).idCard : 'S/N',
-          region: region,
-          fecha: format(typeof a.date.toDate === 'function' ? a.date.toDate() : new Date(a.date as any), 'dd/MM/yyyy'),
-          codigo: 'PRIM',
-          causa: 'Horas Product. Con Manejo', 
-          he_m, hs_m, pausa, he_t, hs_t,
-          justifique: `${a.incidentNumber ? a.incidentNumber + ' ' : ''}${a.title}`.trim()
+      sortedActivities.forEach(a => {
+        let fechaValue = 'S/N';
+        try {
+          if (a.date) {
+            const d = typeof (a.date as any).toDate === 'function' ? (a.date as any).toDate() : new Date(a.date as any);
+            if (!isNaN(d.getTime())) {
+              fechaValue = format(d, 'dd-MM-yy');
+            }
+          }
+        } catch(e) {}
+
+        const data: any = {
+          fecha: fechaValue,
+          flota: a.fleet || '',
+          incidente: `${a.incidentNumber ? a.incidentNumber + ' ' : ''}${a.title}`.trim(),
+          doc: 'no',
+          st: a.overtimeHours && a.overtimeHours > 0 ? `${formatHours(a.overtimeHours)}` : 'no',
+          he_m: a.startTimeMorning ? formatTimeAMPM(a.startTimeMorning) : '07:30 AM',
+          hs_m: a.endTimeMorning ? formatTimeAMPM(a.endTimeMorning) : '11:45 AM',
+          pausa: a.hasPause || 'SI',
+          he_t: a.startTimeAfternoon ? formatTimeAMPM(a.startTimeAfternoon) : '12:45 PM',
+          hs_t: a.endTimeAfternoon ? formatTimeAMPM(a.endTimeAfternoon) : formatTimeAMPM(a.endTime || '16:00'),
+          horas: a.totalHours ? `${formatHours(a.totalHours)}h` : '',
+          manejo: '',
+          viaticos: a.hasPerDiem ? 'si' : 'no',
+          dpto: ''
+        };
+
+        const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
+        planTechs.forEach(t => {
+           const isParticipant = parts.some((p: string) => (p || '').toLowerCase() === (t.name || '').toLowerCase());
+           data[`tech_${t.id}`] = isParticipant ? 'X' : '';
         });
 
-        row.eachCell(cell => {
+        const row = sheet.addRow(data);
+
+        row.eachCell((cell, colNumber) => {
           cell.font = { size: 9, name: 'Arial' };
           cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
           cell.border = {
-            top: { style: 'thin', color: { argb: 'FFD9D9D9' } },
-            left: { style: 'thin', color: { argb: 'FFD9D9D9' } },
-            bottom: { style: 'thin', color: { argb: 'FFD9D9D9' } },
-            right: { style: 'thin', color: { argb: 'FFD9D9D9' } }
+            top: { style: 'thin', color: { argb: 'FF000000' } },
+            left: { style: 'thin', color: { argb: 'FF000000' } },
+            bottom: { style: 'thin', color: { argb: 'FF000000' } },
+            right: { style: 'thin', color: { argb: 'FF000000' } }
           };
+          
+          if (colNumber === 3) {
+            cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+          }
+          if (colNumber >= 4 && colNumber <= 3 + planTechs.length) {
+            cell.font = { size: 9, name: 'Arial', bold: true };
+          }
         });
-
-        // align Name and Justifique to left
-        row.getCell(3).alignment = { horizontal: 'left', vertical: 'middle' };
-        row.getCell(14).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
-        row.height = Math.max(15, Math.ceil((row.getCell(14).text.length / 45) * 15));
       });
-    });
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    
-    // Format: Registro_Actividades_Jueves_30_abril_2026.xlsx
-    const dayName = format(new Date(), 'EEEE', { locale: es });
-    const day = format(new Date(), 'dd');
-    const monthName = format(new Date(), 'MMMM', { locale: es });
-    const year = format(new Date(), 'yyyy');
-    const dataDate = format(selectedDate, 'dd-MM-yyyy');
-    
-    const fileName = `Registro_CANTV_${day}_${monthName}_${year}_${dayName}_Generado_De_${dataDate}.xlsx`;
-    saveAs(new Blob([buffer]), fileName);
-    } catch (err) {
+      const buffer = await workbook.xlsx.writeBuffer();
+      const dayName = format(new Date(), 'EEEE', { locale: es });
+      const day = format(new Date(), 'dd');
+      const monthName = format(new Date(), 'MMMM', { locale: es });
+      const year = format(new Date(), 'yyyy');
+      const dataDate = format(selectedDate, 'dd-MM-yyyy');
+      
+      const fileName = `Planificacion_CANTV_${day}_${monthName}_${year}_${dayName}_Generado_De_${dataDate}.xlsx`;
+      saveAs(new Blob([buffer]), fileName);
+    } catch (err: any) {
       console.error("Error exporting daily Excel:", err);
-      alert("Error al generar el archivo Excel del día.");
+      alert("Error al generar Planificación: " + (err.message || "Desconocido"));
     }
   };
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
       {/* Excel Header Control */}
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 bg-white p-4 sm:p-6 rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02),0_15px_35px_rgba(0,0,0,0.06)] border border-slate-200">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 bg-white p-4 sm:p-6 rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02),0_15px_35px_rgba(0,0,0,0.06)] border border-slate-300">
         <div className="flex items-center gap-4 w-full">
           <div className="w-12 h-12 sm:w-14 sm:h-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 shadow-inner shrink-0">
             <Table size={28} />
@@ -272,15 +404,15 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full xl:w-auto">
           {/* Date Selector */}
-          <div className="flex items-center bg-slate-50 rounded-2xl p-1 border border-slate-200 shadow-sm relative group/date w-full sm:w-auto">
+          <div className="flex items-center bg-slate-50 rounded-2xl p-1 border border-slate-300 shadow-sm relative group/date w-full sm:w-auto">
             <button 
               onClick={() => onDateChange(subDays(selectedDate, 1))}
-              className="w-10 h-10 flex items-center justify-center hover:bg-white hover:text-brand-blue rounded-xl transition-all hover:shadow-md border border-transparent hover:border-slate-100"
+              className="w-10 h-10 flex items-center justify-center hover:bg-white hover:text-brand-blue rounded-xl transition-all hover:shadow-md border border-transparent hover:border-slate-300"
             >
               <ChevronLeft size={20} />
             </button>
             
-            <div className="flex-1 flex items-center gap-1 min-w-[280px] bg-white/80 rounded-2xl border-2 border-slate-100 p-1 shadow-sm">
+            <div className="flex-1 flex items-center gap-1 min-w-[280px] bg-white/80 rounded-2xl border-2 border-slate-300 p-1 shadow-sm">
               {/* Day Selector */}
               <select 
                 value={format(selectedDate, 'd')}
@@ -340,7 +472,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                 "w-10 h-10 flex items-center justify-center rounded-xl transition-all border border-transparent",
                 isFuture 
                   ? "text-slate-300 cursor-not-allowed" 
-                  : "hover:bg-white hover:text-brand-blue hover:shadow-md hover:border-slate-100"
+                  : "hover:bg-white hover:text-brand-blue hover:shadow-md hover:border-slate-300"
               )}
             >
               <ChevronRight size={20} />
@@ -358,11 +490,18 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
               </button>
             )}
             <button 
-              onClick={exportDayToExcel}
+              onClick={exportPlanificacionToExcel}
+              className="flex-[1_1_100%] sm:flex-[0_0_auto] px-3 sm:px-6 py-2.5 bg-brand-blue text-white rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-widest shadow-lg shadow-brand-blue/20 hover:bg-brand-blue-dark active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+            >
+              <Table size={16} className="shrink-0" />
+              <span className="truncate">Planificación</span>
+            </button>
+            <button 
+              onClick={exportSobretiempoToExcel}
               className="flex-[1_1_100%] sm:flex-[0_0_auto] px-3 sm:px-6 py-2.5 bg-emerald-600 text-white rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-widest shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
             >
               <Download size={16} className="shrink-0" />
-              <span className="truncate">Exportar Excel</span>
+              <span className="truncate">Sobretiempo</span>
             </button>
           </div>
         </div>
@@ -375,13 +514,13 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
         
         {/* Desktop Table View */}
         <div className="hidden lg:block overflow-x-auto custom-scrollbar">
-          <table className="w-full text-left border-collapse border-slate-200">
+          <table className="w-full text-left border-collapse border border-slate-300">
             <thead>
-              <tr className="bg-slate-100/80 border-b-2 border-slate-200">
-                <th className="px-4 py-4 w-12 text-center text-[10px] font-black text-slate-400 bg-slate-100 uppercase tracking-widest">#</th>
+              <tr className="bg-slate-100/80 border-b-2 border-slate-300">
+                <th className="px-4 py-4 w-12 text-center text-[10px] font-black text-slate-400 bg-slate-100 uppercase tracking-widest border border-slate-300">#</th>
                 <th 
                   onClick={() => handleSort('incidentNumber')}
-                  className="px-6 py-4 border-r border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors group"
+                  className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors group"
                 >
                   <div className="flex items-center gap-2">
                     Incidente <SortIcon columnKey="incidentNumber" />
@@ -389,7 +528,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                 </th>
                 <th 
                   onClick={() => handleSort('title')}
-                  className="px-6 py-4 border-r border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors group"
+                  className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors group"
                 >
                   <div className="flex items-center gap-2">
                     Actividad / Labor Realizada <SortIcon columnKey="title" />
@@ -397,7 +536,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                 </th>
                 <th 
                   onClick={() => handleSort('participantsCount')}
-                  className="px-6 py-4 border-r border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors group"
+                  className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors group"
                 >
                   <div className="flex items-center gap-2">
                     Técnicos <SortIcon columnKey="participantsCount" />
@@ -405,33 +544,33 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                 </th>
                 <th 
                   onClick={() => handleSort('region')}
-                  className="px-6 py-4 border-r border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center cursor-pointer hover:bg-slate-100 transition-colors group"
+                  className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center cursor-pointer hover:bg-slate-100 transition-colors group"
                 >
                   <div className="flex items-center justify-center gap-2">
                     Región <SortIcon columnKey="region" />
                   </div>
                 </th>
-                <th className="px-6 py-4 border-r border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
                   Entrada AM
                 </th>
-                <th className="px-6 py-4 border-r border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
                   Salida AM
                 </th>
-                <th className="px-6 py-4 border-r border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
                   Pausa
                 </th>
-                <th className="px-6 py-4 border-r border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
                   Entrada PM
                 </th>
-                <th className="px-6 py-4 border-r border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
                   Salida PM
                 </th>
-                <th className="px-6 py-4 border-r border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
                   ST / Déficit
                 </th>
                 <th 
                   onClick={() => handleSort('perDiem')}
-                  className="px-6 py-4 border-r border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center cursor-pointer hover:bg-slate-100 transition-colors group"
+                  className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center cursor-pointer hover:bg-slate-100 transition-colors group"
                 >
                   <div className="flex items-center justify-center gap-2">
                     Viático <SortIcon columnKey="perDiem" />
@@ -439,16 +578,16 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                 </th>
                 <th 
                   onClick={() => handleSort('fleet')}
-                  className="px-6 py-4 border-r border-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center cursor-pointer hover:bg-slate-100 transition-colors group"
+                  className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center cursor-pointer hover:bg-slate-100 transition-colors group"
                 >
                   <div className="flex items-center justify-center gap-2">
                     Flota <SortIcon columnKey="fleet" />
                   </div>
                 </th>
-                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Acciones</th>
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
+            <tbody className="font-medium">
               {sortedActivities.length > 0 ? (
                 sortedActivities.map((activity, index) => {
                   const isHighlighted = highlightedId === activity.id;
@@ -456,14 +595,14 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                     <tr 
                       key={`activity-row-${activity.id}`} 
                       className={cn(
-                        "transition-all duration-300 group relative",
+                        "transition-all duration-300 group relative border-b border-slate-300",
                         isHighlighted 
                           ? "bg-brand-blue/5 ring-2 ring-inset ring-brand-blue/20 z-10" 
                           : "hover:bg-slate-100/50"
                       )}
                     >
                       <td className={cn(
-                        "px-4 py-4 text-center font-mono text-[10px] transition-colors",
+                        "px-4 py-4 text-center font-mono text-[10px] transition-colors border border-slate-300",
                         isHighlighted ? "text-brand-blue bg-brand-blue/10" : "text-slate-400 bg-slate-50/50"
                       )}>
                         {index + 1}
@@ -471,20 +610,20 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                           <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-blue" />
                         )}
                       </td>
-                    <td className="px-6 py-4 border-r border-slate-50">
+                    <td className="px-6 py-4 border border-slate-300">
                       <span className="font-mono text-[10px] font-black text-brand-blue bg-brand-blue/5 px-2 py-1 rounded">
                         {activity.incidentNumber || 'S/N'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 border-r border-slate-50 min-w-[320px]">
+                    <td className="px-6 py-4 border border-slate-300 min-w-[320px]">
                       <p className="text-sm font-bold text-slate-900 mb-2">{activity.title}</p>
-                      <div className="max-h-24 overflow-y-auto custom-scrollbar pr-2 bg-slate-50/50 rounded-lg p-2 border border-slate-100">
+                      <div className="max-h-24 overflow-y-auto custom-scrollbar pr-2 bg-slate-50/50 rounded-lg p-2 border border-slate-300">
                         <p className="text-[10px] text-slate-500 leading-relaxed whitespace-pre-wrap">
                           {activity.description}
                         </p>
                       </div>
                     </td>
-                    <td className="px-6 py-4 border-r border-slate-50">
+                    <td className="px-6 py-4 border border-slate-300">
                       <div className="flex flex-col gap-2">
                         {activity.participants?.map((p, pIdx) => {
                           const techMatch = technicians.find(t => t.name === p);
@@ -505,25 +644,25 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                         }) || <span className="text-[10px] text-slate-300">N/A</span>}
                       </div>
                     </td>
-                    <td className="px-6 py-4 border-r border-slate-50 text-center">
+                    <td className="px-6 py-4 border border-slate-300 text-center">
                       <span className="text-[10px] font-bold text-slate-700">{activity.region || 'Central'}</span>
                     </td>
-                    <td className="px-4 py-4 border-r border-slate-50 text-center">
-                      <span className="text-xs font-mono font-black text-slate-700">{formatTimeAMPM(activity.startTimeMorning || '07:30')}</span>
+                    <td className="px-4 py-4 border border-slate-300 text-center">
+                      <span className="text-xs font-mono font-black text-slate-700">{formatTimeAMPM(activity.startTimeMorning || '07:45')}</span>
                     </td>
-                    <td className="px-4 py-4 border-r border-slate-50 text-center">
+                    <td className="px-4 py-4 border border-slate-300 text-center">
                       <span className="text-xs font-mono font-black text-slate-700">{formatTimeAMPM(activity.endTimeMorning || '11:45')}</span>
                     </td>
-                    <td className="px-4 py-4 border-r border-slate-50 text-center">
+                    <td className="px-4 py-4 border border-slate-300 text-center">
                       <span className="text-[10px] font-bold text-slate-600">{activity.hasPause || 'SI'}</span>
                     </td>
-                    <td className="px-4 py-4 border-r border-slate-50 text-center">
+                    <td className="px-4 py-4 border border-slate-300 text-center">
                       <span className="text-xs font-mono font-black text-slate-700">{formatTimeAMPM(activity.startTimeAfternoon || '12:45')}</span>
                     </td>
-                    <td className="px-4 py-4 border-r border-slate-50 text-center">
+                    <td className="px-4 py-4 border border-slate-300 text-center">
                       <span className="text-xs font-mono font-black text-slate-700">{formatTimeAMPM(activity.endTimeAfternoon || activity.endTime || '16:00')}</span>
                     </td>
-                    <td className="px-6 py-4 border-r border-slate-50 text-center bg-slate-50/30">
+                    <td className="px-6 py-4 border border-slate-300 text-center bg-slate-50/30">
                       {(activity.overtimeHours || 0) !== 0 ? (
                         <div className="flex flex-col items-center">
                           <span className={cn(
@@ -536,30 +675,30 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                           </span>
                         </div>
                       ) : (
-                        <span className="text-xs font-mono font-bold text-slate-300">-</span>
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-md border text-slate-400 bg-slate-50 border-slate-300">-</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 border-r border-slate-50 text-center">
+                    <td className="px-6 py-4 border border-slate-300 text-center">
                       {activity.hasPerDiem ? (
-                        <div className="flex flex-col items-center">
+                        <div className="flex flex-col items-center gap-0.5">
                           <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">SÍ</span>
-                          <span className="text-[9px] text-slate-400 font-bold">Bs.{activity.perDiemAmount}</span>
+                          <span className="text-xs font-black text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded-md border border-slate-300">Bs.{activity.perDiemAmount}</span>
                         </div>
                       ) : (
-                        <span className="text-slate-300 text-xs">NO</span>
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-md border text-slate-400 bg-slate-50 border-slate-300">NO</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 border-r border-slate-50 text-center">
+                    <td className="px-6 py-4 border border-slate-300 text-center">
                       <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest truncate">
                         {activity.fleet || '---'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-center">
+                    <td className="px-6 py-4 border border-slate-300 text-center">
                       <div className="flex items-center justify-center gap-2">
                         {onEdit && (
                           <button 
                             onClick={() => onEdit(activity)}
-                            className="p-1.5 text-slate-400 hover:text-brand-blue transition-colors rounded-lg hover:bg-white border border-transparent hover:border-slate-100"
+                            className="p-1.5 text-slate-400 hover:text-brand-blue transition-colors rounded-lg hover:bg-white border border-transparent hover:border-slate-300"
                           >
                              <FileText size={14} />
                           </button>
@@ -579,14 +718,14 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
               })
             ) : (
                 Array.from({ length: 8 }).map((_, i) => (
-                  <tr key={`spreadsheet-skeleton-row-${i}`} className="opacity-40">
-                    <td className="px-4 py-6 text-center text-slate-200 font-mono text-[10px] bg-slate-50/30">{sortedActivities.length + i + 1}</td>
-                    <td className="px-6 py-6 border-r border-slate-50 bg-slate-50/10"></td>
-                    <td className="px-6 py-6 border-r border-slate-50"></td>
-                    <td className="px-6 py-6 border-r border-slate-50"></td>
-                    <td className="px-6 py-6 border-r border-slate-50"></td>
-                    <td className="px-6 py-6 border-r border-slate-50"></td>
-                    <td className="px-6 py-6 border-r border-slate-50"></td>
+                  <tr key={`spreadsheet-skeleton-row-${i}`} className="opacity-40 border-b border-slate-300">
+                    <td className="px-4 py-6 border border-slate-300 text-center text-slate-200 font-mono text-[10px] bg-slate-50/30">{sortedActivities.length + i + 1}</td>
+                    <td className="px-6 py-6 border border-slate-300 bg-slate-50/10"></td>
+                    <td className="px-6 py-6 border border-slate-300"></td>
+                    <td className="px-6 py-6 border border-slate-300"></td>
+                    <td className="px-6 py-6 border border-slate-300"></td>
+                    <td className="px-6 py-6 border border-slate-300"></td>
+                    <td className="px-6 py-6 border border-slate-300"></td>
                   </tr>
                 ))
               )}
@@ -606,7 +745,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                     "border rounded-2xl p-4 space-y-3 relative overflow-hidden transition-all duration-300",
                     isHighlighted 
                       ? "bg-brand-blue/5 border-brand-blue ring-2 ring-brand-blue/20 shadow-lg scale-[1.02]" 
-                      : "bg-slate-50/50 border-slate-100"
+                      : "bg-slate-50/50 border-slate-300"
                   )}
                 >
                   {isHighlighted && (
@@ -625,18 +764,18 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                     </div>
                   </div>
 
-                  <div className="max-h-32 overflow-y-auto bg-white/50 p-2 rounded-xl border border-slate-100">
+                  <div className="max-h-32 overflow-y-auto bg-white/50 p-2 rounded-xl border border-slate-300">
                     <p className="text-[10px] text-slate-500 leading-relaxed whitespace-pre-wrap">{activity.description}</p>
                   </div>
 
-                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-300">
                   <div>
                     <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Personal (P00)</p>
                     <div className="flex flex-wrap gap-1">
                       {activity.participants?.slice(0, 2).map((p, pIdx) => {
                         const tMatch = technicians.find(t => t.name === p);
                         return (
-                          <span key={`${activity.id}-pm-${pIdx}`} className="text-[9px] font-bold text-slate-600 bg-white px-1.5 py-0.5 rounded border border-slate-100 whitespace-nowrap">
+                          <span key={`${activity.id}-pm-${pIdx}`} className="text-[9px] font-bold text-slate-600 bg-white px-1.5 py-0.5 rounded border border-slate-300 whitespace-nowrap">
                             {p.split(' ')[0]} ({tMatch?.employeeId || '??'})
                           </span>
                         );
@@ -649,7 +788,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                   <div className="text-right">
                     <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">ST / Viático</p>
                     <div className="flex items-center justify-end gap-2">
-                      <span className="text-[9px] font-mono text-slate-500 font-bold bg-white px-1.5 py-0.5 rounded border border-slate-100">
+                      <span className="text-[9px] font-mono text-slate-500 font-bold bg-white px-1.5 py-0.5 rounded border border-slate-300">
                         {formatTimeAMPM(activity.startTimeMorning || '-')} a {formatTimeAMPM(activity.endTimeAfternoon || '-')}
                       </span>
                       {(activity.overtimeHours || 0) !== 0 ? (
@@ -662,9 +801,9 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                           {(activity.overtimeHours || 0) > 0 ? '+' : ''}{formatHours(activity.overtimeHours || 0)}
                         </span>
                       ) : (
-                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded text-slate-300">0.00h</span>
+                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded text-slate-400 bg-slate-50 border border-slate-300">0.00h</span>
                       )}
-                      <span className={cn("text-[9px] font-black px-1.5 py-0.5 rounded", activity.hasPerDiem ? "bg-emerald-50 text-emerald-600" : "text-slate-300")}>
+                      <span className={cn("text-[10px] font-black px-2 py-0.5 rounded border", activity.hasPerDiem ? "bg-amber-50 text-amber-600 border-amber-100" : "text-slate-400 bg-slate-50 border-slate-300")}>
                         {activity.hasPerDiem ? `Bs.${activity.perDiemAmount}` : 'No'}
                       </span>
                     </div>
@@ -698,14 +837,14 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
           })
         ) : (
           Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="h-32 bg-slate-50/30 rounded-2xl border border-dashed border-slate-100 animate-pulse" />
+              <div key={i} className="h-32 bg-slate-50/30 rounded-2xl border border-dashed border-slate-300 animate-pulse" />
             ))
           )}
         </div>
 
         {sortedActivities.length === 0 && (
           <div className="absolute inset-x-0 bottom-1/2 translate-y-1/2 flex flex-col items-center justify-center pointer-events-none">
-            <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 mb-4 border border-slate-100 shadow-inner">
+            <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 mb-4 border border-slate-300 shadow-inner">
               <Database size={32} />
             </div>
             <h4 className="text-lg font-display font-black text-slate-300 tracking-tight">Planilla Disponible</h4>

@@ -114,10 +114,9 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
                         "text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border",
                         tech.role === 'admin' ? "bg-purple-50 text-purple-600 border-purple-100" : 
                         tech.role === 'supervisor' ? "bg-brand-blue/5 text-brand-blue border-brand-blue/10" : 
-                        tech.role === 'none' ? "bg-amber-50 text-amber-600 border-amber-100" :
                         "bg-slate-50 text-slate-500 border-slate-100"
                       )}>
-                        {tech.role === 'admin' ? 'Administrador' : tech.role === 'supervisor' ? 'Supervisor' : tech.role === 'none' ? 'Estadística' : 'Técnico'}
+                        {tech.role === 'admin' ? 'Administrador' : tech.role === 'supervisor' ? 'Supervisor' : 'Técnico'}
                       </span>
                     </td>
                     <td className="px-6 py-4">

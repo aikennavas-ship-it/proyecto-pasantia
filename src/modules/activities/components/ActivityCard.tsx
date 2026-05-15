@@ -105,10 +105,10 @@ export default function ActivityCard({ activity, onEdit }: ActivityCardProps) {
           </div>
           <div className="space-y-1 border-l border-slate-200 pl-3">
             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Productividad</span>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-1.5 justify-center h-full">
               {activity.overtimeHours && activity.overtimeHours !== 0 ? (
                 <span className={cn(
-                  "text-[10px] font-black px-2 py-0.5 rounded-md shadow-sm",
+                  "text-[10px] font-black px-2 py-0.5 rounded-md shadow-sm w-max",
                   activity.overtimeHours > 0
                     ? "text-brand-blue bg-brand-blue/10 ring-1 ring-brand-blue/20"
                     : "text-red-500 bg-red-50 ring-1 ring-red-100"
@@ -116,7 +116,12 @@ export default function ActivityCard({ activity, onEdit }: ActivityCardProps) {
                   {activity.overtimeHours > 0 ? '+' : ''}{formatHours(activity.overtimeHours)} {activity.overtimeHours > 0 ? 'S.T' : 'D.F'}
                 </span>
               ) : (
-                <span className="text-[10px] font-black text-slate-300 uppercase tracking-tighter">Normal J-8</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter w-max">Normal J-8</span>
+              )}
+              {activity.hasPerDiem && (
+                <span className="text-[11px] font-black text-amber-700 bg-amber-100/50 border border-amber-200 px-2 py-0.5 rounded-md shadow-sm w-max">
+                  Viático: Bs.{activity.perDiemAmount}
+                </span>
               )}
             </div>
           </div>

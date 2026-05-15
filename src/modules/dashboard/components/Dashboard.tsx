@@ -489,7 +489,7 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           bg: "bg-brand-blue/10",
           items: activities.slice(0, 10).map(a => ({
             label: a.title,
-            value: format(a.date.toDate(), 'dd/MM'),
+            value: format(a.createdAt ? a.createdAt.toDate() : a.date.toDate(), 'dd/MM/yyyy'),
             sub: a.incidentNumber || 'S/N'
           })),
           extra: (
@@ -516,7 +516,7 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           items: stActivities.map(a => ({
             label: a.title,
             value: `+${formatHours(a.overtimeHours!)}`,
-            sub: format(a.date.toDate(), 'dd MMM')
+            sub: format(a.createdAt ? a.createdAt.toDate() : a.date.toDate(), 'dd/MM/yyyy')
           })),
           extra: <p className="mt-4 text-[10px] text-center text-slate-400 font-medium">Mostrando las últimas incidencias con tiempo extra productivo.</p>
         };
@@ -530,7 +530,7 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           items: dfActivities.map(a => ({
             label: a.title,
             value: formatHours(a.overtimeHours!),
-            sub: format(a.date.toDate(), 'dd MMM')
+            sub: format(a.createdAt ? a.createdAt.toDate() : a.date.toDate(), 'dd/MM/yyyy')
           })),
           extra: <p className="mt-4 text-[10px] text-center text-slate-400 font-medium">Registro de labores con tiempo por debajo del estándar de 8h.</p>
         };
@@ -545,7 +545,7 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           items: vActivities.map(a => ({
             label: a.title,
             value: `Bs.${Number(a.perDiemAmount || 0).toFixed(1)}`,
-            sub: format(a.date.toDate(), 'dd/MM')
+            sub: format(a.createdAt ? a.createdAt.toDate() : a.date.toDate(), 'dd/MM/yyyy')
           })),
           extra: (
             <div className="mt-4 p-3 bg-amber-500/10 rounded-xl border border-amber-500/20 text-center">
