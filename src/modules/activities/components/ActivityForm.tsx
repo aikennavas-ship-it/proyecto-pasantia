@@ -1,7 +1,7 @@
 import React from 'react';
 import { ActivityType, Technician } from '../../../types';
 import { X, AlertCircle } from 'lucide-react';
-import { cn } from '../../../lib/utils';
+import { cn, formatIncidentNumber } from '../../../lib/utils';
 
 export function formatHours(decimalHours: number): string {
   if (!decimalHours || decimalHours === 0) return '0h';
@@ -28,7 +28,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
   const [formData, setFormData] = React.useState({
     title: initialData?.title || '',
     description: initialData?.description || '',
-    incidentNumber: initialData?.incidentNumber || '',
+    incidentNumber: initialData?.incidentNumber ? formatIncidentNumber(initialData.incidentNumber) : '',
     fleet: initialData?.fleet || '',
     region: initialData?.region || 'Central',
     technicianName: initialData?.technicianName || '',
@@ -42,6 +42,9 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
     participants: (initialData?.participants && initialData.participants.length > 0) 
       ? initialData.participants 
       : (initialData?.technicianName ? [initialData.technicianName] : []) as string[],
+    justification: initialData?.justification || '',
+    documentation: initialData?.documentation || 'NO', // 'SI' o 'NO'
+    driver: initialData?.driver || '',
     date: (function() {
       if (!initialData?.date) return initialDate || new Date();
       if (typeof initialData.date.toDate === 'function') return initialData.date.toDate();
@@ -73,6 +76,44 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
 
   const todayStr = getTodayStr();
 
+  // Helper to robustly parse "HH:MM" to decimal hours
+  const parseTime = (timeStr: string) => {
+    if (!timeStr) return 0;
+    const [h, m] = timeStr.split(':').map(Number);
+    return (h || 0) + (m || 0) / 60;
+  };
+
+  // Calculate current OT for justification validation
+  const currentOT = React.useMemo(() => {
+    let virtualMorning = 0;
+    if (formData.startTimeMorning && formData.endTimeMorning) {
+        let em = parseTime(formData.endTimeMorning);
+        let sm = parseTime(formData.startTimeMorning);
+        if (em < sm) em += 24;
+        virtualMorning = (em - 11.75) + 4; // Base de 4h
+    }
+
+    let virtualAfternoon = 0;
+    let saTime = 0;
+    if (formData.startTimeAfternoon && formData.endTimeAfternoon) {
+        saTime = parseTime(formData.startTimeAfternoon);
+        let ea = parseTime(formData.endTimeAfternoon);
+        if (ea < saTime) ea += 24;
+        virtualAfternoon = (ea - 16) + 3.25; // Base de 3.25h
+    }
+
+    let virtualTotal = virtualMorning + virtualAfternoon;
+    let otHours = virtualTotal - 7.25; // Jornada de 7.25h
+
+    if (formData.hasPause === 'NO' && virtualMorning > 0 && virtualAfternoon > 0) {
+        otHours += 1;
+    }
+
+    return Number(otHours.toFixed(4));
+  }, [formData.startTimeMorning, formData.endTimeMorning, formData.startTimeAfternoon, formData.endTimeAfternoon, formData.hasPause]);
+
+  const hasExtraTime = currentOT !== 0;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorPrompt('');
@@ -93,13 +134,13 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
       return;
     }
     
-    // Calculate worked time based on morning and afternoon shifts as a unified workday
-    // Helper to robustly parse "HH:MM" to decimal hours
-    const parseTime = (timeStr: string) => {
-      if (!timeStr) return 0;
-      const [h, m] = timeStr.split(':').map(Number);
-      return (h || 0) + (m || 0) / 60;
-    };
+    if (hasExtraTime && (!formData.justification || formData.justification.trim().length === 0)) {
+      setErrorPrompt(currentOT > 0 
+        ? 'Existe un sobretiempo calculado. Debes justificarlo obligatoriamente.'
+        : 'Existe un déficit de horas. Debes justificar el motivo obligatoriamente.'
+      );
+      return;
+    }
 
     let totalWorkedHours = 0;
     let emTime = 0;
@@ -218,8 +259,8 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="space-y-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="space-y-1 md:col-span-2">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Título de la Actividad</label>
               <input
                 required
@@ -236,9 +277,9 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
                 required
                 type="text"
                 className="input-field font-mono text-sm"
-                placeholder="Ej: INC-2024-001"
+                placeholder="INC-2024-001"
                 value={formData.incidentNumber}
-                onChange={e => setFormData({ ...formData, incidentNumber: e.target.value })}
+                onChange={e => setFormData({ ...formData, incidentNumber: formatIncidentNumber(e.target.value) })}
               />
             </div>
             <div className="space-y-1">
@@ -287,6 +328,27 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
                 }}
               />
             </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Documentación</label>
+              <select 
+                className="input-field" 
+                value={formData.documentation} 
+                onChange={e => setFormData({ ...formData, documentation: e.target.value })}
+              >
+                <option value="NO">NO</option>
+                <option value="SI">SI</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Manejo (Chofer)</label>
+              <input
+                type="text"
+                className="input-field"
+                placeholder="Nombre de quien manejó"
+                value={formData.driver}
+                onChange={e => setFormData({ ...formData, driver: e.target.value })}
+              />
+            </div>
           </div>
 
           <div className="space-y-1">
@@ -307,6 +369,36 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
               placeholder="Describa las labores realizadas con precisión técnica para el reporte administrativo..."
               value={formData.description}
               onChange={e => setFormData({ ...formData, description: e.target.value })}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex justify-between items-center">
+              <label className={cn(
+                "text-[11px] font-bold uppercase tracking-wider ml-1",
+                hasExtraTime ? "text-brand-blue" : "text-slate-400"
+              )}>
+                Justificación {hasExtraTime && (currentOT > 0 ? '(Sobretiempo)' : '(Déficit)')}
+              </label>
+              <span className={cn(
+                "text-[10px] font-bold",
+                formData.justification.length > 1400 ? "text-red-500" : "text-slate-400"
+              )}>
+                {formData.justification.length} / 1500
+              </span>
+            </div>
+            <textarea
+              required={hasExtraTime}
+              disabled={!hasExtraTime}
+              rows={3}
+              maxLength={1500}
+              className={cn(
+                "input-field resize-none h-24 transition-opacity",
+                !hasExtraTime && "opacity-50 bg-slate-50 cursor-not-allowed"
+              )}
+              placeholder={hasExtraTime ? `Explique el motivo del ${currentOT > 0 ? 'sobretiempo' : 'déficit'}...` : "El tiempo calculado es estándar. No requiere justificación."}
+              value={formData.justification}
+              onChange={e => setFormData({ ...formData, justification: e.target.value })}
             />
           </div>
 

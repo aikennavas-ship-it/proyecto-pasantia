@@ -22,6 +22,9 @@ export interface Activity {
   hasPerDiem: boolean;
   perDiemAmount?: number;
   totalHours?: number;
+  justification?: string;
+  documentation?: string;
+  driver?: string;
   technicianId: string;
   technicianName: string;
   adminId?: string; // UID of the user who owns/created this record

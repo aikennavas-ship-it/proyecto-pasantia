@@ -2,6 +2,8 @@ import React from 'react';
 import { Download, FileText, Table, Users, Filter, Calendar, ChevronRight, Archive, History, X, Clock, MapPin, Wrench } from 'lucide-react';
 import { Activity, Technician } from '../../../types';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, getYear, getMonth } from 'date-fns';
@@ -46,7 +48,17 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
     });
   };
 
-  const generateSobretiempoExcel = () => {
+  const formatTimeAMPM = (time24: string) => {
+    if (!time24 || time24 === '--:--') return '--:--';
+    const [hours, minutes] = time24.split(':');
+    const h = parseInt(hours, 10);
+    if (isNaN(h)) return time24;
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    return `${h12.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+  };
+
+  const generateSobretiempoExcel = async () => {
     if (filteredActivities.length === 0) return;
 
     try {
@@ -59,118 +71,138 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
         if (!confirmExport) return;
       }
 
-      // 1. Prepare Data for "Registro de Labores y Horarios" Mega-Sheet
-    const transmissionTechs = technicians.filter(t => t.status === 'activo' && (t.specialty || '').toLowerCase().includes('transmisión'));
-    const datosTechs = technicians.filter(t => t.status === 'activo' && (t.specialty || '').toLowerCase().includes('datos'));
-    const otherTechs = technicians.filter(t => t.status === 'activo' && !transmissionTechs.includes(t) && !datosTechs.includes(t));
-    
-    const allActiveTechs = [...transmissionTechs, ...datosTechs, ...otherTechs];
-    
-    // Header Row 1: Departments (to be merged) and empty space for the rest
-    const headerRow1 = ['FECHA', 'FLOTA', 'INCIDENTE'];
-    transmissionTechs.forEach((_, i) => headerRow1.push(i === 0 ? 'TRANSMISION' : ''));
-    datosTechs.forEach((_, i) => headerRow1.push(i === 0 ? 'DATOS' : ''));
-    otherTechs.forEach((_, i) => headerRow1.push(i === 0 ? 'OTROS' : ''));
-    
-    // Add empty headers for the extended tracking section
-    headerRow1.push('', '', '', '', '', '', '', '');
+      const workbook = new ExcelJS.Workbook();
+      const sheetName = `${months[selectedMonth].substring(0, 3).toUpperCase()}_${selectedYear}`;
+      const sheet = workbook.addWorksheet(sheetName);
 
-    // Header Row 2: Tech Names & Extended Columns
-    const headerRow2 = [
-      'FECHA', 'FLOTA', 'INCIDENTE', 
-      ...allActiveTechs.map(t => (t.name || 'S/N').split(' ')[0].toUpperCase()),
-      'DOCUMENTACION', 'SOBRETIEMPO', 'Hora Entrada Mañana', 'Hora Salida Mañana', 'Pausa', 'Hora Entrada Tarde', 'Hora Salida Tarde', 'JUSTIFIQUE'
-    ];
+      const transmisionTechs = technicians.filter(t => (t.specialty || '').toLowerCase().includes('transmision') || (t.specialty || '').toLowerCase().includes('transmisión'));
+      const datosTechs = technicians.filter(t => (t.specialty || '').toLowerCase().includes('datos') || (!(t.specialty || '').toLowerCase().includes('transmision') && !(t.specialty || '').toLowerCase().includes('transmisión')));
+      const planTechs = [...transmisionTechs, ...datosTechs];
 
-    // Rows
-    const registroData: any[][] = [];
-    
-    filteredActivities.forEach(a => {
-      // Instead of duplicating rows for every participant, the mega sheet seems to list one activity per row, 
-      // checkmarks the technicians, and tracks the times for that activity block.
-      // If we put checkmarks for multiple techs in one row, we can only really list the "Hora" once for that activity.
-      // Based on the PDF structure, it's one row per activity.
-      const row = [
-        format(a.date.toDate(), 'dd-MM-yy'),
-        a.fleet || '',
-        a.incidentNumber || 'S/N'
+      const cols = [
+        { header: 'FECHA', key: 'fecha', width: 12 },
+        { header: 'FLOTA', key: 'flota', width: 10 },
+        { header: 'INCIDENTE', key: 'incidente', width: 45 },
       ];
       
-      // Participant checkmarks
-      allActiveTechs.forEach(tech => {
-        row.push(a.participants?.includes(tech.name) ? 'x' : '');
+      planTechs.forEach(t => {
+        const nameParts = t.name.split(' ');
+        const shortName = nameParts[0].toUpperCase();
+        cols.push({ header: shortName, key: `tech_${t.id}`, width: 10 });
       });
-      
-      // Extended tracking columns
-      row.push(
-        a.incidentNumber ? a.incidentNumber : 'S/N', // DOCUMENTACION
-        (a.overtimeHours || 0) !== 0 ? formatHours(a.overtimeHours || 0) : '0h', // SOBRETIEMPO
-        '', // We leave standard blank or parse real startTime if they wanted system info instead of hardcoded 7:30
-        '', // Hora Salida Mañana
-        '', // Pausa
-        '', // Hora Entrada Tarde
-        a.endTime || '', // Hora Salida Tarde
-        a.title // JUSTIFIQUE
+
+      cols.push(
+        { header: 'DOCUMENTACION', key: 'doc', width: 15 },
+        { header: 'SOBRETIEMPO', key: 'st', width: 15 },
+        { header: 'DEFICIT', key: 'deficit', width: 15 },
+        { header: 'Hora Entrada Mañana', key: 'he_m', width: 18 },
+        { header: 'Hora Salida Mañana', key: 'hs_m', width: 18 },
+        { header: 'Pausa', key: 'pausa', width: 10 },
+        { header: 'Hora Entrada Tarde', key: 'he_t', width: 18 },
+        { header: 'Hora Salida Tarde', key: 'hs_t', width: 18 },
+        { header: 'JUSTIFIQUE', key: 'justifique', width: 45 },
+        { header: 'HORAS', key: 'horas', width: 10 },
+        { header: 'MANEJO', key: 'manejo', width: 15 },
+        { header: 'VIATICOS', key: 'viaticos', width: 12 },
+        { header: 'DEPARTAMENTO', key: 'dpto', width: 15 }
       );
-      
-      // If they really want system info instead of hardcoded 11:45, we leave them blank to be filled, 
-      // or we put the startTime in Entrada Mañana, and endTime in Salida Tarde.
-      if (a.startTime) {
-        row[row.length - 6] = a.startTime; // Hora Entrada Mañana
+
+      sheet.columns = cols;
+      sheet.insertRow(1, []);
+
+      if (transmisionTechs.length > 0) {
+        sheet.mergeCells(1, 4, 1, 3 + transmisionTechs.length);
+        const cell = sheet.getCell(1, 4);
+        cell.value = 'TRANSMISION';
+        cell.font = { bold: true, size: 9, name: 'Arial', color: { argb: 'FF000000' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
       }
       
-      registroData.push(row);
-    });
+      if (datosTechs.length > 0) {
+        sheet.mergeCells(1, 4 + transmisionTechs.length, 1, 3 + planTechs.length);
+        const cell = sheet.getCell(1, 4 + transmisionTechs.length);
+        cell.value = 'DATOS';
+        cell.font = { bold: true, size: 9, name: 'Arial', color: { argb: 'FF000000' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      }
 
-    const wb = XLSX.utils.book_new();
-    
-    // Create Worksheet 1 with complex headers
-    const ws1 = XLSX.utils.aoa_to_sheet([headerRow1, headerRow2, ...registroData]);
-    
-    // Define Merges for Worksheet 1
-    const merges1: XLSX.Range[] = [];
-    if (transmissionTechs.length > 1) {
-      merges1.push({ s: { r: 0, c: 3 }, e: { r: 0, c: 3 + transmissionTechs.length - 1 } });
-    }
-    if (datosTechs.length > 1) {
-      merges1.push({ s: { r: 0, c: 3 + transmissionTechs.length }, e: { r: 0, c: 3 + transmissionTechs.length + datosTechs.length - 1 } });
-    }
-    // Merge FECHA, FLOTA, INCIDENTE vertically
-    [0, 1, 2].forEach(col => {
-      merges1.push({ s: { r: 0, c: col }, e: { r: 1, c: col } });
-    });
-    ws1['!merges'] = merges1;
-    XLSX.utils.book_append_sheet(wb, ws1, "Registro de Labores");
+      const styleHeader = (rowNum: number) => {
+        const row = sheet.getRow(rowNum);
+        row.eachCell((cell) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00B0F0' } };
+          cell.font = { bold: true, size: 9, name: 'Arial', color: { argb: 'FF000000' } };
+          cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        });
+      };
 
-    // 2. Prepare Data for "Viáticos y Manejo" (The separate sheet from PDF 10)
-    const viaticosRows = [['PERSONAL', 'HORAS', 'MANEJO', 'VIATICOS', 'DEPARTAMENTO']];
-    const techStats: Record<string, any> = {};
-    filteredActivities.forEach(a => {
-      a.participants?.forEach(p => {
-        if (!techStats[p]) techStats[p] = { horas: 0, manejo: 'no', viaticos: 'no', depto: a.type };
-        techStats[p].horas += (a.overtimeHours || 0);
-        if (a.fleet) techStats[p].manejo = 'SI';
-        if (a.hasPerDiem) techStats[p].viaticos = 'SI';
+      styleHeader(1);
+      styleHeader(2);
+
+      filteredActivities.forEach(a => {
+        let fechaValue = 'S/N';
+        try {
+          if (a.date) {
+            const d = typeof (a.date as any).toDate === 'function' ? (a.date as any).toDate() : new Date(a.date as any);
+            if (!isNaN(d.getTime())) {
+              fechaValue = format(d, 'dd-MM-yy');
+            }
+          }
+        } catch(e) {}
+
+        const data: any = {
+          fecha: fechaValue,
+          flota: a.fleet || '',
+          incidente: a.incidentNumber ? ` ${a.incidentNumber} - ${a.title}` : a.title,
+          doc: a.documentation ? a.documentation.toLowerCase() : 'no',
+          st: a.overtimeHours && a.overtimeHours > 0 ? `${formatHours(a.overtimeHours)}` : 'no',
+          deficit: typeof a.overtimeHours === 'number' && a.overtimeHours < 0 ? `${formatHours(a.overtimeHours)}` : 'no',
+          he_m: a.startTimeMorning ? formatTimeAMPM(a.startTimeMorning) : '07:30 AM',
+          hs_m: a.endTimeMorning ? formatTimeAMPM(a.endTimeMorning) : '11:45 AM',
+          pausa: a.hasPause || 'SI',
+          he_t: a.startTimeAfternoon ? formatTimeAMPM(a.startTimeAfternoon) : '12:45 PM',
+          hs_t: a.endTimeAfternoon ? formatTimeAMPM(a.endTimeAfternoon) : formatTimeAMPM(a.endTime || '16:00'),
+          justifique: a.justification || ((a.overtimeHours || 0) === 0 ? 'Sin desviación de horario.' : 'No justificado.'),
+          horas: a.totalHours ? `${formatHours(a.totalHours)}h` : '',
+          manejo: a.driver || '',
+          viaticos: a.hasPerDiem ? 'si' : 'no',
+          dpto: ''
+        };
+
+        const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
+        planTechs.forEach(t => {
+           const isParticipant = parts.some((p: string) => (p || '').toLowerCase() === (t.name || '').toLowerCase());
+           data[`tech_${t.id}`] = isParticipant ? 'X' : '';
+        });
+
+        const row = sheet.addRow(data);
+
+        row.eachCell((cell, colNumber) => {
+          cell.font = { size: 9, name: 'Arial' };
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FF000000' } },
+            left: { style: 'thin', color: { argb: 'FF000000' } },
+            bottom: { style: 'thin', color: { argb: 'FF000000' } },
+            right: { style: 'thin', color: { argb: 'FF000000' } }
+          };
+          
+          if (colNumber === 3) {
+            cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+          }
+          if (colNumber >= 4 && colNumber <= 3 + planTechs.length) {
+            cell.font = { size: 9, name: 'Arial', bold: true };
+          }
+        });
       });
-    });
 
-    Object.entries(techStats).forEach(([name, stats]) => {
-      viaticosRows.push([
-        name.toUpperCase(),
-        stats.horas.toFixed(1),
-        stats.manejo,
-        stats.viaticos,
-        (stats.depto || 'OTRO').toUpperCase()
-      ]);
-    });
-    
-    const ws2 = XLSX.utils.aoa_to_sheet(viaticosRows);
-    XLSX.utils.book_append_sheet(wb, ws2, "Viáticos y Manejo");
+      const buffer = await workbook.xlsx.writeBuffer();
+      const fileName = `SOBRETIEMPO_${months[selectedMonth].toUpperCase()}_${selectedYear}_TX_DX.xlsx`;
+      saveAs(new Blob([buffer]), fileName);
 
-    XLSX.writeFile(wb, `SOBRETIEMPO_${months[selectedMonth].toUpperCase()}_${selectedYear}_TX_DX.xlsx`);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error generating Excel report:", err);
-      alert("Error al generar el archivo Excel.");
+      alert("Error al generar el archivo Excel: " + (err.message || ""));
     }
   };
 

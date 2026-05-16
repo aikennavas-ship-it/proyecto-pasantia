@@ -210,7 +210,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
             codigo: 'PRIM',
             causa: 'Horas Product. Con Manejo', 
             he_m, hs_m, pausa, he_t, hs_t,
-            justifique: `${a.incidentNumber ? a.incidentNumber + ' ' : ''}${a.title}`.trim()
+            justifique: a.justification || ((a.overtimeHours || 0) === 0 ? 'Sin desviación de horario.' : 'No justificado.')
           });
 
           row.eachCell(cell => {
@@ -275,6 +275,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
       cols.push(
         { header: 'DOCUMENTACION', key: 'doc', width: 15 },
         { header: 'SOBRETIEMPO', key: 'st', width: 15 },
+        { header: 'DEFICIT', key: 'deficit', width: 15 },
         { header: 'Hora Entrada Mañana', key: 'he_m', width: 18 },
         { header: 'Hora Salida Mañana', key: 'hs_m', width: 18 },
         { header: 'Pausa', key: 'pausa', width: 10 },
@@ -332,16 +333,17 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
         const data: any = {
           fecha: fechaValue,
           flota: a.fleet || '',
-          incidente: `${a.incidentNumber ? a.incidentNumber + ' ' : ''}${a.title}`.trim(),
-          doc: 'no',
+          incidente: a.incidentNumber ? ` ${a.incidentNumber} - ${a.title}` : a.title,
+          doc: a.documentation ? a.documentation.toLowerCase() : 'no',
           st: a.overtimeHours && a.overtimeHours > 0 ? `${formatHours(a.overtimeHours)}` : 'no',
+          deficit: typeof a.overtimeHours === 'number' && a.overtimeHours < 0 ? `${formatHours(a.overtimeHours)}` : 'no',
           he_m: a.startTimeMorning ? formatTimeAMPM(a.startTimeMorning) : '07:30 AM',
           hs_m: a.endTimeMorning ? formatTimeAMPM(a.endTimeMorning) : '11:45 AM',
           pausa: a.hasPause || 'SI',
           he_t: a.startTimeAfternoon ? formatTimeAMPM(a.startTimeAfternoon) : '12:45 PM',
           hs_t: a.endTimeAfternoon ? formatTimeAMPM(a.endTimeAfternoon) : formatTimeAMPM(a.endTime || '16:00'),
           horas: a.totalHours ? `${formatHours(a.totalHours)}h` : '',
-          manejo: '',
+          manejo: a.driver || '',
           viaticos: a.hasPerDiem ? 'si' : 'no',
           dpto: ''
         };
@@ -568,6 +570,18 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                 <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
                   ST / Déficit
                 </th>
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                  Horas
+                </th>
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-left">
+                  Justificación
+                </th>
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                  Documentación
+                </th>
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                  Manejo
+                </th>
                 <th 
                   onClick={() => handleSort('perDiem')}
                   className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center cursor-pointer hover:bg-slate-100 transition-colors group"
@@ -611,7 +625,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                         )}
                       </td>
                     <td className="px-6 py-4 border border-slate-300">
-                      <span className="font-mono text-[10px] font-black text-brand-blue bg-brand-blue/5 px-2 py-1 rounded">
+                      <span className="font-mono text-[10px] font-black text-brand-blue bg-brand-blue/5 px-2 py-1 rounded whitespace-nowrap">
                         {activity.incidentNumber || 'S/N'}
                       </span>
                     </td>
@@ -677,6 +691,29 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                       ) : (
                         <span className="text-[10px] font-black px-2 py-0.5 rounded-md border text-slate-400 bg-slate-50 border-slate-300">-</span>
                       )}
+                    </td>
+                    <td className="px-6 py-4 border border-slate-300 text-center">
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-md border text-brand-blue bg-brand-blue/5 border-brand-blue/20">
+                        {activity.totalHours ? `${formatHours(activity.totalHours)}` : '-'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 border border-slate-300">
+                      <div className="max-w-[200px] max-h-20 overflow-y-auto custom-scrollbar pr-1">
+                        <p className="text-[10px] text-slate-500 leading-relaxed">
+                          {activity.justification || ((activity.overtimeHours || 0) === 0 ? 'Sin desviación de horario.' : 'No justificado.')}
+                        </p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 border border-slate-300 text-center">
+                      <span className={cn(
+                        "text-[10px] font-black px-2 py-0.5 rounded-md border inline-block min-w-[32px]",
+                        activity.documentation === 'SI' ? "text-brand-blue bg-brand-blue/5 border-brand-blue/20" : "text-slate-400 bg-slate-50 border-slate-300"
+                      )}>
+                        {activity.documentation || 'NO'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 border border-slate-300 text-center">
+                      <span className="text-[10px] font-bold text-slate-700 truncate block max-w-[100px]">{activity.driver || 'S/N'}</span>
                     </td>
                     <td className="px-6 py-4 border border-slate-300 text-center">
                       {activity.hasPerDiem ? (
