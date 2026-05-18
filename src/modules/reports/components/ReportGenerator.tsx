@@ -162,7 +162,7 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
           pausa: a.hasPause || 'SI',
           he_t: a.startTimeAfternoon ? formatTimeAMPM(a.startTimeAfternoon) : '12:45 PM',
           hs_t: a.endTimeAfternoon ? formatTimeAMPM(a.endTimeAfternoon) : formatTimeAMPM(a.endTime || '16:00'),
-          justifique: a.justification || ((a.overtimeHours || 0) === 0 ? 'Sin desviación de horario.' : 'No justificado.'),
+          justifique: a.justification || ((a.overtimeHours || 0) === 0 ? '' : 'No justificado.'),
           horas: a.totalHours ? `${formatHours(a.totalHours)}h` : '',
           manejo: a.driver || '',
           viaticos: a.hasPerDiem ? 'si' : 'no',
@@ -518,7 +518,7 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
                             )}
                             {activity.hasPerDiem && (
                               <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
-                                Bs.{activity.perDiemAmount}
+                                Bs. {Number(activity.perDiemAmount || 0).toFixed(2)}
                               </span>
                             )}
                           </div>

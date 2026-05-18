@@ -224,6 +224,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
     try {
       await onSubmit({
         ...formData,
+        justification: hasExtraTime ? formData.justification : 'No aplica. Jornada estándar sin sobretiempo ni déficit.',
         perDiemAmount: formData.perDiemAmount ? Number(formData.perDiemAmount) : 0,
         overtimeHours,
         totalHours: Number(totalWorkedHours.toFixed(4)),
@@ -397,7 +398,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
                 !hasExtraTime && "opacity-50 bg-slate-50 cursor-not-allowed"
               )}
               placeholder={hasExtraTime ? `Explique el motivo del ${currentOT > 0 ? 'sobretiempo' : 'déficit'}...` : "El tiempo calculado es estándar. No requiere justificación."}
-              value={formData.justification}
+              value={hasExtraTime ? formData.justification : 'Jornada estándar sin sobretiempo ni déficit.'}
               onChange={e => setFormData({ ...formData, justification: e.target.value })}
             />
           </div>
@@ -445,14 +446,12 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
                   <input
                     required
                     type="number"
+                    step="0.01"
                     className="input-field h-10 text-sm font-bold"
                     placeholder="0.00"
                     value={formData.perDiemAmount}
                     onChange={e => {
-                      const val = e.target.value;
-                      // Remove leading zeros formatting issue
-                      const cleanedVal = val.replace(/^0+/, '') || (val === '0' ? '0' : '');
-                      setFormData({ ...formData, perDiemAmount: cleanedVal });
+                      setFormData({ ...formData, perDiemAmount: e.target.value });
                     }}
                   />
                 </div>

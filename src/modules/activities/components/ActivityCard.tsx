@@ -120,7 +120,7 @@ export default function ActivityCard({ activity, onEdit }: ActivityCardProps) {
               )}
               {activity.hasPerDiem && (
                 <span className="text-[11px] font-black text-amber-700 bg-amber-100/50 border border-amber-200 px-2 py-0.5 rounded-md shadow-sm w-max">
-                  Viático: Bs.{activity.perDiemAmount}
+                  Viático: Bs. {Number(activity.perDiemAmount || 0).toFixed(2)}
                 </span>
               )}
             </div>

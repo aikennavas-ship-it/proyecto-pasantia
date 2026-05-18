@@ -12,10 +12,10 @@
  * - Gestiona la exportación directa a Excel y opciones de ordenación de filas.
  */
 import React from 'react';
-import { Download, Table, Calendar, ChevronLeft, ChevronRight, FileText, Plus, Database, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Search, AlertOctagon } from 'lucide-react';
+import { Download, Table, Calendar, ChevronLeft, ChevronRight, FileText, Plus, Database, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Search, AlertOctagon, X, Clock, Zap, TrendingDown } from 'lucide-react';
 import { Activity, Technician } from '../../../types';
 import { cn } from '../../../lib/utils';
-import { format, startOfDay, endOfDay, isSameDay, addDays, subDays } from 'date-fns';
+import { format, startOfDay, endOfDay, isSameDay, addDays, subDays, startOfWeek, endOfWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
@@ -45,6 +45,8 @@ interface SmartSpreadsheetProps {
 export default function SmartSpreadsheet({ activities, technicians, onAddActivity, selectedDate, onDateChange, onEdit, onDelete, highlightedId }: SmartSpreadsheetProps) {
   const [sortConfig, setSortConfig] = React.useState<{ key: keyof Activity | 'participantsCount' | 'perDiem'; direction: 'asc' | 'desc' } | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
+  const [summaryDetails, setSummaryDetails] = React.useState<'total' | 'st' | 'df' | 'exceso' | null>(null);
+  const [weeklySummaryDetails, setWeeklySummaryDetails] = React.useState<'total' | 'st' | 'df' | 'exceso' | null>(null);
 
   // Determine "Today" in Maracay (UTC-4)
   const getTodayInMaracay = () => {
@@ -76,6 +78,22 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
     
     return isToday && matchesSearch;
   });
+
+  const weeklyActivities = React.useMemo(() => {
+    const weekStart = startOfWeek(selectedDate, { weekStartsOn: 1 });
+    const weekEnd = endOfWeek(selectedDate, { weekStartsOn: 1 });
+    
+    return activities.filter(a => {
+      if (!a || !a.date) return false;
+      let activityDate: Date;
+      try {
+        activityDate = typeof a.date.toDate === 'function' ? a.date.toDate() : new Date(a.date as any);
+      } catch {
+        activityDate = new Date();
+      }
+      return activityDate >= weekStart && activityDate <= weekEnd;
+    });
+  }, [activities, selectedDate]);
 
   const sortedActivities = React.useMemo(() => {
     if (!sortConfig) return filteredActivities;
@@ -115,6 +133,17 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
     return Object.values(stPorPersona).filter(st => st > 2).length;
   }, [sortedActivities]);
 
+  const excesoPersonasSemanal = React.useMemo(() => {
+    let count = 0;
+    weeklyActivities.forEach(a => {
+      const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
+      if (a.overtimeHours && a.overtimeHours > 2) {
+        count += parts.length;
+      }
+    });
+    return count;
+  }, [weeklyActivities]);
+
   const handleSort = (key: any) => {
     let direction: 'asc' | 'desc' = 'asc';
     if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -130,15 +159,16 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
       : <ArrowDown size={14} strokeWidth={3} className="text-brand-blue" />;
   };
 
-  const exportSobretiempoToExcel = async () => {
-    if (!sortedActivities || sortedActivities.length === 0) {
-      console.warn("No hay actividades registradas para esta fecha.");
+  const exportSobretiempoToExcel = async (activitiesList = sortedActivities, isWeekly = false) => {
+    if (!activitiesList || activitiesList.length === 0) {
+      console.warn("No hay actividades registradas.");
       return;
     }
 
     try {
       const workbook = new ExcelJS.Workbook();
-      const sheet = workbook.addWorksheet(format(selectedDate, 'dd-MM-yyyy'));
+      const sheetName = isWeekly ? `Semana_${format(startOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}` : format(selectedDate, 'dd-MM-yyyy');
+      const sheet = workbook.addWorksheet(sheetName.substring(0, 31));
 
       sheet.columns = [
         { header: 'AREA', key: 'area', width: 12 },
@@ -154,6 +184,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
         { header: 'Pausa', key: 'pausa', width: 8 },
         { header: 'Hora Entrada Tarde', key: 'he_t', width: 18 },
         { header: 'Hora Salida Tarde', key: 'hs_t', width: 18 },
+        { header: 'HORAS', key: 'horas', width: 10 },
         { header: 'JUSTIFIQUE', key: 'justifique', width: 45 }
       ];
 
@@ -161,14 +192,14 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
       headerRow.height = 30;
 
       headerRow.eachCell((cell, colNumber) => {
-        cell.font = { bold: true, color: { argb: colNumber === 1 || colNumber === 14 ? 'FF000000' : 'FFFFFFFF' }, size: 9, name: 'Arial' };
+        cell.font = { bold: true, color: { argb: colNumber === 1 || colNumber === 15 ? 'FF000000' : 'FFFFFFFF' }, size: 9, name: 'Arial' };
         cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
         
         let fgColor = 'FF4F81BD'; // Blue 
         
         if (colNumber === 1) fgColor = 'FFF79646'; // AREA (Orange)
         if (colNumber >= 9 && colNumber <= 13) fgColor = 'FF5B9BD5'; // Horarios (Lighter Blue)
-        if (colNumber === 14) fgColor = 'FFFCD5B4'; // JUSTIFIQUE (Peach)
+        if (colNumber === 15) fgColor = 'FFFCD5B4'; // JUSTIFIQUE (Peach)
 
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fgColor } };
         cell.border = {
@@ -177,7 +208,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
         };
       });
 
-      sortedActivities.forEach(a => {
+      activitiesList.forEach(a => {
         const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
         
         parts.forEach(p => {
@@ -210,7 +241,8 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
             codigo: 'PRIM',
             causa: 'Horas Product. Con Manejo', 
             he_m, hs_m, pausa, he_t, hs_t,
-            justifique: a.justification || ((a.overtimeHours || 0) === 0 ? 'Sin desviación de horario.' : 'No justificado.')
+            horas: a.totalHours ? `${formatHours(a.totalHours)}h` : '',
+            justifique: a.justification || ((a.overtimeHours || 0) === 0 ? '' : 'No justificado.')
           });
 
           row.eachCell(cell => {
@@ -225,8 +257,8 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
           });
 
           row.getCell(3).alignment = { horizontal: 'left', vertical: 'middle' };
-          row.getCell(14).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
-          row.height = Math.max(15, Math.ceil((row.getCell(14).text?.length || 10) / 45) * 15);
+          row.getCell(15).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+          row.height = Math.max(15, Math.ceil((row.getCell(15).text?.length || 10) / 45) * 15);
         });
       });
 
@@ -238,23 +270,27 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
       const year = format(new Date(), 'yyyy');
       const dataDate = format(selectedDate, 'dd-MM-yyyy');
       
-      const fileName = `Sobretiempo_CANTV_${day}_${monthName}_${year}_${dayName}_Generado_De_${dataDate}.xlsx`;
+      const fileName = isWeekly 
+        ? `Sobretiempo_CANTV_${day}_${monthName}_${year}_Semana_De_${format(startOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}_AL_${format(endOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}.xlsx`
+        : `Sobretiempo_CANTV_${day}_${monthName}_${year}_${dayName}_Generado_De_${dataDate}.xlsx`;
+      
       saveAs(new Blob([buffer]), fileName);
     } catch (err: any) {
-      console.error("Error exporting daily Excel:", err);
+      console.error("Error exporting Excel:", err);
       alert("Error al generar Excel: " + (err.message || "Desconocido"));
     }
   };
 
-  const exportPlanificacionToExcel = async () => {
-    if (!sortedActivities || sortedActivities.length === 0) {
-      console.warn("No hay actividades registradas para esta fecha.");
+  const exportPlanificacionToExcel = async (activitiesList = sortedActivities, isWeekly = false) => {
+    if (!activitiesList || activitiesList.length === 0) {
+      console.warn("No hay actividades registradas.");
       return;
     }
 
     try {
       const workbook = new ExcelJS.Workbook();
-      const sheet = workbook.addWorksheet(format(selectedDate, 'dd-MM-yyyy'));
+      const sheetName = isWeekly ? `Semana_${format(startOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}` : format(selectedDate, 'dd-MM-yyyy');
+      const sheet = workbook.addWorksheet(sheetName.substring(0, 31));
 
       const transmisionTechs = technicians.filter(t => (t.specialty || '').toLowerCase().includes('transmision') || (t.specialty || '').toLowerCase().includes('transmisión'));
       const datosTechs = technicians.filter(t => (t.specialty || '').toLowerCase().includes('datos') || (!(t.specialty || '').toLowerCase().includes('transmision') && !(t.specialty || '').toLowerCase().includes('transmisión')));
@@ -319,7 +355,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
       styleHeader(1);
       styleHeader(2);
 
-      sortedActivities.forEach(a => {
+      activitiesList.forEach(a => {
         let fechaValue = 'S/N';
         try {
           if (a.date) {
@@ -382,10 +418,13 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
       const year = format(new Date(), 'yyyy');
       const dataDate = format(selectedDate, 'dd-MM-yyyy');
       
-      const fileName = `Planificacion_CANTV_${day}_${monthName}_${year}_${dayName}_Generado_De_${dataDate}.xlsx`;
+      const fileName = isWeekly 
+        ? `Planificacion_CANTV_${day}_${monthName}_${year}_Semana_De_${format(startOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}_AL_${format(endOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}.xlsx`
+        : `Planificacion_CANTV_${day}_${monthName}_${year}_${dayName}_Generado_De_${dataDate}.xlsx`;
+      
       saveAs(new Blob([buffer]), fileName);
     } catch (err: any) {
-      console.error("Error exporting daily Excel:", err);
+      console.error("Error exporting Excel:", err);
       alert("Error al generar Planificación: " + (err.message || "Desconocido"));
     }
   };
@@ -492,14 +531,14 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
               </button>
             )}
             <button 
-              onClick={exportPlanificacionToExcel}
+              onClick={() => exportPlanificacionToExcel()}
               className="flex-[1_1_100%] sm:flex-[0_0_auto] px-3 sm:px-6 py-2.5 bg-brand-blue text-white rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-widest shadow-lg shadow-brand-blue/20 hover:bg-brand-blue-dark active:scale-[0.98] transition-all flex items-center justify-center gap-2"
             >
               <Table size={16} className="shrink-0" />
               <span className="truncate">Planificación</span>
             </button>
             <button 
-              onClick={exportSobretiempoToExcel}
+              onClick={() => exportSobretiempoToExcel()}
               className="flex-[1_1_100%] sm:flex-[0_0_auto] px-3 sm:px-6 py-2.5 bg-emerald-600 text-white rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-widest shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
             >
               <Download size={16} className="shrink-0" />
@@ -699,8 +738,8 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                     </td>
                     <td className="px-6 py-4 border border-slate-300">
                       <div className="max-w-[200px] max-h-20 overflow-y-auto custom-scrollbar pr-1">
-                        <p className="text-[10px] text-slate-500 leading-relaxed">
-                          {activity.justification || ((activity.overtimeHours || 0) === 0 ? 'Sin desviación de horario.' : 'No justificado.')}
+                        <p className="text-[10px] text-slate-500 leading-relaxed italic">
+                          {activity.justification || ((activity.overtimeHours || 0) === 0 ? '' : 'No justificado.')}
                         </p>
                       </div>
                     </td>
@@ -719,7 +758,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                       {activity.hasPerDiem ? (
                         <div className="flex flex-col items-center gap-0.5">
                           <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">SÍ</span>
-                          <span className="text-xs font-black text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded-md border border-slate-300">Bs.{activity.perDiemAmount}</span>
+                          <span className="text-xs font-black text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded-md border border-slate-300">Bs. {Number(activity.perDiemAmount || 0).toFixed(2)}</span>
                         </div>
                       ) : (
                         <span className="text-[10px] font-black px-2 py-0.5 rounded-md border text-slate-400 bg-slate-50 border-slate-300">NO</span>
@@ -794,7 +833,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                   
                   <div className="flex items-start justify-between gap-4">
                     <div className="space-y-1">
-                      <span className="font-mono text-[9px] font-black text-brand-blue bg-brand-blue/5 px-2 py-0.5 rounded">
+                      <span className="font-mono text-[9px] font-black text-brand-blue bg-brand-blue/5 px-2 py-0.5 rounded whitespace-nowrap">
                         {activity.incidentNumber || 'S/N'}
                       </span>
                       <h4 className="text-sm font-black text-slate-900 leading-tight">{activity.title}</h4>
@@ -803,6 +842,12 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
 
                   <div className="max-h-32 overflow-y-auto bg-white/50 p-2 rounded-xl border border-slate-300">
                     <p className="text-[10px] text-slate-500 leading-relaxed whitespace-pre-wrap">{activity.description}</p>
+                    {activity.justification && (
+                      <div className="mt-2 pt-2 border-t border-slate-200">
+                        <span className="text-[8px] font-black tracking-widest uppercase text-slate-400 mb-1 block">Justificación</span>
+                        <p className="text-[9px] text-slate-500 leading-relaxed italic">{activity.justification}</p>
+                      </div>
+                    )}
                   </div>
 
                 <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-300">
@@ -824,9 +869,12 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                   </div>
                   <div className="text-right">
                     <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">ST / Viático</p>
-                    <div className="flex items-center justify-end gap-2">
+                    <div className="flex items-center justify-end gap-2 flex-wrap">
                       <span className="text-[9px] font-mono text-slate-500 font-bold bg-white px-1.5 py-0.5 rounded border border-slate-300">
                         {formatTimeAMPM(activity.startTimeMorning || '-')} a {formatTimeAMPM(activity.endTimeAfternoon || '-')}
+                      </span>
+                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded border text-brand-blue bg-brand-blue/5 border-brand-blue/20">
+                        {activity.totalHours ? `${formatHours(activity.totalHours)}h` : '-'}
                       </span>
                       {(activity.overtimeHours || 0) !== 0 ? (
                         <span className={cn(
@@ -841,10 +889,23 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                         <span className="text-[9px] font-black px-1.5 py-0.5 rounded text-slate-400 bg-slate-50 border border-slate-300">0.00h</span>
                       )}
                       <span className={cn("text-[10px] font-black px-2 py-0.5 rounded border", activity.hasPerDiem ? "bg-amber-50 text-amber-600 border-amber-100" : "text-slate-400 bg-slate-50 border-slate-300")}>
-                        {activity.hasPerDiem ? `Bs.${activity.perDiemAmount}` : 'No'}
+                        {activity.hasPerDiem ? `Bs. ${Number(activity.perDiemAmount || 0).toFixed(2)}` : 'No'}
                       </span>
                     </div>
                   </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3 pt-2 text-left">
+                   <div>
+                     <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Documentación / Manejo</p>
+                     <div className="flex items-center gap-2">
+                       <span className={cn(
+                          "text-[9px] font-black px-1.5 py-0.5 rounded border",
+                          activity.documentation === 'SI' ? "text-brand-blue bg-brand-blue/5 border-brand-blue/20" : "text-slate-400 bg-slate-50 border-slate-300"
+                       )}>Doc: {activity.documentation || 'NO'}</span>
+                       <span className="text-[9px] font-bold text-slate-600 truncate max-w-[80px]">Chofer: {activity.driver || 'S/N'}</span>
+                     </div>
+                   </div>
                 </div>
 
                 <div className="flex justify-between items-center pt-2">
@@ -890,52 +951,337 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
         ) }
       </div>
 
-      <div className="flex flex-col md:flex-row justify-between items-center bg-slate-900 px-6 py-5 rounded-3xl text-white shadow-2xl shadow-slate-900/40 gap-6 border border-slate-800">
-        <div className="flex flex-wrap items-center justify-center md:justify-start gap-6 sm:gap-10 w-full md:w-auto">
-          <div className="flex flex-col items-center md:items-start min-w-[90px]">
-            <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1.5">Total Horas</span>
-            <span className="text-2xl font-display font-black leading-none text-white">
-              {formatHours(sortedActivities.reduce((acc, a) => acc + (a.totalHours || (a.overtimeHours || 0) + 8), 0))}
-            </span>
-          </div>
-          <div className="hidden sm:block w-[1px] h-10 bg-slate-800" />
-          <div className="flex flex-col items-center md:items-start min-w-[90px]">
-            <span className="text-[9px] font-black text-emerald-500/60 uppercase tracking-[0.2em] mb-1.5">ST Acumulado</span>
-            <span className="text-2xl font-display font-black text-emerald-400 leading-none">
-              {formatHours(sortedActivities.reduce((acc, a) => {
-                const st = (a.overtimeHours || 0);
-                return acc + (st > 0 ? st : 0);
-              }, 0))}
-            </span>
-          </div>
-          <div className="hidden sm:block w-[1px] h-10 bg-slate-800" />
-          <div className="flex flex-col items-center md:items-start min-w-[90px]">
-            <span className="text-[9px] font-black text-amber-500/60 uppercase tracking-[0.2em] mb-1.5">DF Acumulado</span>
-            <span className="text-2xl font-display font-black text-amber-400 leading-none">
-              {formatHours(Math.abs(sortedActivities.reduce((acc, a) => {
-                const st = (a.overtimeHours || 0);
-                return acc + (st < 0 ? st : 0);
-              }, 0)))}
-            </span>
-          </div>
-          <div className="hidden sm:block w-[1px] h-10 bg-slate-800" />
-          <div className="flex items-center gap-4 bg-white/5 px-4 py-2 rounded-2xl border border-white/5">
-            <div className="flex flex-col items-center md:items-start">
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <AlertOctagon size={12} className="text-brand-red animate-pulse" />
-                <span className="text-[9px] font-black text-brand-red uppercase tracking-widest leading-none">Jornada {'>'} 10h</span>
-              </div>
-              <span className="text-2xl font-display font-black text-white leading-none">
-                {excesoPersonas}
+      <div className="bg-slate-900 rounded-[2rem] border border-slate-800 shadow-2xl shadow-slate-900/40 overflow-hidden flex flex-col mt-2">
+        {/* Sección Día Actual */}
+        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center p-6 gap-6 w-full">
+          <div className="flex flex-wrap items-center justify-start gap-x-8 gap-y-6 w-full xl:w-auto">
+            <div className="flex flex-col items-start min-w-[90px]">
+               <span className="text-[10px] font-black text-brand-blue uppercase tracking-widest mb-0.5">Día Actual</span>
+               <span className="text-[11px] font-medium text-slate-400 whitespace-nowrap">
+                 {format(selectedDate, 'dd MMM yyyy')}
+               </span>
+            </div>
+            
+            <button 
+              onClick={() => setSummaryDetails('total')}
+              className="flex flex-col items-start min-w-[80px] cursor-pointer hover:bg-slate-800/50 p-2 -m-2 rounded-xl transition-colors active:scale-95"
+            >
+              <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1.5 flex items-center gap-1"><Clock size={10} /> Total Horas</span>
+              <span className="text-2xl font-display font-black leading-none text-white">
+                {formatHours(sortedActivities.reduce((acc, a) => acc + (a.totalHours || (a.overtimeHours || 0) + 8), 0))}
               </span>
+            </button>
+            
+            <div className="hidden sm:block w-[1px] h-10 bg-slate-800" />
+            
+            <button 
+              onClick={() => setSummaryDetails('st')}
+              className="flex flex-col items-start min-w-[80px] cursor-pointer hover:bg-slate-800/50 p-2 -m-2 rounded-xl transition-colors active:scale-95"
+            >
+              <span className="text-[9px] font-black text-emerald-500/60 uppercase tracking-[0.2em] mb-1.5 flex items-center gap-1"><Zap size={10} /> ST Acumulado</span>
+              <span className="text-2xl font-display font-black text-emerald-400 leading-none">
+                {formatHours(sortedActivities.reduce((acc, a) => {
+                  const st = (a.overtimeHours || 0);
+                  return acc + (st > 0 ? st : 0);
+                }, 0))}
+              </span>
+            </button>
+            
+            <div className="hidden sm:block w-[1px] h-10 bg-slate-800" />
+            
+            <button 
+              onClick={() => setSummaryDetails('df')}
+              className="flex flex-col items-start min-w-[80px] cursor-pointer hover:bg-slate-800/50 p-2 -m-2 rounded-xl transition-colors active:scale-95"
+            >
+              <span className="text-[9px] font-black text-amber-500/60 uppercase tracking-[0.2em] mb-1.5 flex items-center gap-1"><TrendingDown size={10} /> DF Acumulado</span>
+              <span className="text-2xl font-display font-black text-amber-400 leading-none">
+                {formatHours(Math.abs(sortedActivities.reduce((acc, a) => {
+                  const st = (a.overtimeHours || 0);
+                  return acc + (st < 0 ? st : 0);
+                }, 0)))}
+              </span>
+            </button>
+            
+            <div className="hidden sm:block w-[1px] h-10 bg-slate-800" />
+            
+            <button 
+              onClick={() => setSummaryDetails('exceso')}
+              className="flex items-center gap-3 bg-white/5 px-4 py-2.5 rounded-2xl border border-white/5 cursor-pointer hover:border-white/20 hover:bg-white/10 transition-colors active:scale-95"
+            >
+              <div className="flex flex-col items-start">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <AlertOctagon size={12} className="text-brand-red animate-pulse" />
+                  <span className="text-[9px] font-black text-brand-red uppercase tracking-widest leading-none">Jornada {'>'} 10h</span>
+                </div>
+                <span className="text-2xl font-display font-black text-white leading-none">
+                  {excesoPersonas}
+                </span>
+              </div>
+            </button>
+          </div>
+          
+          <div className="hidden xl:block text-right shrink-0">
+            <p className="text-[10px] font-bold text-slate-500 italic leading-tight uppercase tracking-wider">CANTV · Datos y Transmisión</p>
+            <p className="text-[9px] font-black text-brand-blue uppercase tracking-[0.3em] mt-1.5 shadow-sm">Central Maracay 4357</p>
+          </div>
+        </div>
+
+        {/* Línea Divisoria */}
+        <div className="w-full h-px bg-slate-800" />
+
+        {/* Sección Semanal */}
+        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center p-6 bg-slate-800/20 gap-6 w-full">
+          <div className="flex flex-wrap items-center justify-start gap-x-8 gap-y-6 w-full xl:w-auto">
+            <div className="flex flex-col items-start min-w-[90px]">
+               <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-0.5">Semana</span>
+               <span className="text-[11px] font-medium text-slate-400 whitespace-nowrap">
+                 {format(startOfWeek(selectedDate, {weekStartsOn: 1}), 'dd MMM')} - {format(endOfWeek(selectedDate, {weekStartsOn: 1}), 'dd MMM')}
+               </span>
+            </div>
+            
+            <button 
+              onClick={() => setWeeklySummaryDetails('total')}
+              className="flex flex-col items-start min-w-[80px] cursor-pointer hover:bg-slate-800/50 p-2 -m-2 rounded-xl transition-colors active:scale-95"
+            >
+              <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1.5 flex items-center gap-1"><Clock size={10} /> Total (Sem)</span>
+              <span className="text-xl font-display font-black leading-none text-slate-300">
+                {formatHours(weeklyActivities.reduce((acc, a) => acc + (a.totalHours || (a.overtimeHours || 0) + 8), 0))}
+              </span>
+            </button>
+            
+            <div className="hidden sm:block w-[1px] h-8 bg-slate-800" />
+            
+            <button 
+              onClick={() => setWeeklySummaryDetails('st')}
+              className="flex flex-col items-start min-w-[80px] cursor-pointer hover:bg-slate-800/50 p-2 -m-2 rounded-xl transition-colors active:scale-95"
+            >
+              <span className="text-[9px] font-black text-emerald-500/60 uppercase tracking-[0.2em] mb-1.5 flex items-center gap-1"><Zap size={10} /> ST Acumulado</span>
+              <span className="text-xl font-display font-black text-emerald-500 leading-none">
+                {formatHours(weeklyActivities.reduce((acc, a) => {
+                  const st = (a.overtimeHours || 0);
+                  return acc + (st > 0 ? st : 0);
+                }, 0))}
+              </span>
+            </button>
+            
+            <div className="hidden sm:block w-[1px] h-8 bg-slate-800" />
+            
+            <button 
+              onClick={() => setWeeklySummaryDetails('df')}
+              className="flex flex-col items-start min-w-[80px] cursor-pointer hover:bg-slate-800/50 p-2 -m-2 rounded-xl transition-colors active:scale-95"
+            >
+              <span className="text-[9px] font-black text-amber-500/60 uppercase tracking-[0.2em] mb-1.5 flex items-center gap-1"><TrendingDown size={10} /> DF Acumulado</span>
+              <span className="text-xl font-display font-black text-amber-500 leading-none">
+                {formatHours(Math.abs(weeklyActivities.reduce((acc, a) => {
+                  const st = (a.overtimeHours || 0);
+                  return acc + (st < 0 ? st : 0);
+                }, 0)))}
+              </span>
+            </button>
+            
+            <div className="hidden sm:block w-[1px] h-8 bg-slate-800" />
+            
+            <button 
+              onClick={() => setWeeklySummaryDetails('exceso')}
+              className="flex flex-col items-start min-w-[80px] cursor-pointer hover:bg-slate-800/50 p-2 -m-2 rounded-xl transition-colors active:scale-95"
+            >
+              <span className="text-[9px] font-black text-brand-red/80 uppercase tracking-widest mb-1.5 flex items-center gap-1"><AlertOctagon size={10} /> Jornadas {'>'} 10h</span>
+              <span className="text-xl font-display font-black text-brand-red leading-none">
+                {excesoPersonasSemanal}
+              </span>
+            </button>
+          </div>
+          
+          <div className="flex flex-wrap items-center w-full xl:w-auto gap-3 justify-start xl:justify-end shrink-0 pt-2 xl:pt-0">
+            <button
+              onClick={() => exportPlanificacionToExcel(weeklyActivities, true)}
+              className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-4 py-2.5 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white transition-all text-[11px] font-bold"
+              title="Exportar Planificación Semanal"
+            >
+              <Download size={14} /> Plan Semanal
+            </button>
+            <button
+              onClick={() => exportSobretiempoToExcel(weeklyActivities, true)}
+              className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-4 py-2.5 bg-brand-blue/20 text-brand-blue rounded-xl hover:bg-brand-blue hover:text-white transition-all text-[11px] font-bold shadow-lg shadow-brand-blue/10"
+              title="Exportar ST/DF Semanal"
+            >
+              <Download size={14} /> ST Semanal
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary Details Modal */}
+      {summaryDetails && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setSummaryDetails(null)}></div>
+          <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div>
+                <h3 className="font-display font-black text-slate-900 text-lg">
+                  {summaryDetails === 'total' && 'Desglose de Horas Totales'}
+                  {summaryDetails === 'st' && 'Desglose de Sobretiempos'}
+                  {summaryDetails === 'df' && 'Desglose de Déficits'}
+                  {summaryDetails === 'exceso' && 'Jornadas Mayores a 10h'}
+                </h3>
+              </div>
+              <button onClick={() => setSummaryDetails(null)} className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-200 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-0 max-h-[60vh] overflow-y-auto custom-scrollbar">
+              <table className="w-full text-left">
+                <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-sm border-b border-slate-200 z-10">
+                  <tr>
+                    <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Actividad / Técnico</th>
+                    <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Horas</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {sortedActivities.filter(a => {
+                    if (summaryDetails === 'total') return true;
+                    if (summaryDetails === 'st') return (a.overtimeHours || 0) > 0;
+                    if (summaryDetails === 'df') return (a.overtimeHours || 0) < 0;
+                    if (summaryDetails === 'exceso') return (a.totalHours || ((a.overtimeHours || 0) + 8)) > 10;
+                    return false;
+                  }).length === 0 ? (
+                    <tr>
+                      <td colSpan={2} className="px-6 py-8 text-center text-sm font-bold text-slate-400">No hay registros</td>
+                    </tr>
+                  ) : sortedActivities.filter(a => {
+                    if (summaryDetails === 'total') return true;
+                    if (summaryDetails === 'st') return (a.overtimeHours || 0) > 0;
+                    if (summaryDetails === 'df') return (a.overtimeHours || 0) < 0;
+                    if (summaryDetails === 'exceso') return (a.totalHours || ((a.overtimeHours || 0) + 8)) > 10;
+                    return false;
+                  }).map((activity, idx) => {
+                    let value = 0;
+                    if (summaryDetails === 'total' || summaryDetails === 'exceso') value = activity.totalHours || ((activity.overtimeHours || 0) + 8);
+                    if (summaryDetails === 'st') value = activity.overtimeHours || 0;
+                    if (summaryDetails === 'df') value = Math.abs(activity.overtimeHours || 0);
+
+                    return (
+                      <tr key={`summary-row-${idx}`} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="text-sm font-bold text-slate-900 mb-1 leading-tight">{activity.title || 'Sin Título'}</div>
+                          <div className="text-[10px] font-bold text-slate-500">
+                            {activity.participants && activity.participants.length > 0 ? activity.participants.map(p => p.split(' ')[0]).join(', ') : activity.technicianName}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <span className={cn(
+                            "text-xs font-black px-2.5 py-1 rounded-lg border inline-block",
+                            summaryDetails === 'st' ? "text-emerald-600 bg-emerald-50 border-emerald-100" :
+                            summaryDetails === 'df' ? "text-amber-600 bg-amber-50 border-amber-100" :
+                            summaryDetails === 'exceso' ? "text-brand-red bg-brand-red/5 border-brand-red/10" :
+                            "text-brand-blue bg-brand-blue/5 border-brand-blue/10"
+                          )}>
+                            {formatHours(value)}h
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+              <button 
+                onClick={() => setSummaryDetails(null)}
+                className="px-6 py-2.5 bg-slate-800 text-white rounded-xl font-bold text-xs hover:bg-slate-700 active:scale-95 transition-all"
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>
-        <div className="hidden xl:block text-right">
-          <p className="text-[10px] font-bold text-slate-500 italic leading-tight uppercase tracking-wider">CANTV · Datos y Transmisión</p>
-          <p className="text-[9px] font-black text-brand-blue uppercase tracking-[0.3em] mt-1.5 shadow-sm">Central Maracay 4357</p>
+      )}
+      {/* Weekly Summary Details Modal */}
+      {weeklySummaryDetails && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setWeeklySummaryDetails(null)}></div>
+          <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div>
+                <h3 className="font-display font-black text-slate-900 text-lg">
+                  {weeklySummaryDetails === 'total' && 'Desglose de Horas Totales (Semanal)'}
+                  {weeklySummaryDetails === 'st' && 'Desglose de Sobretiempos (Semanal)'}
+                  {weeklySummaryDetails === 'df' && 'Desglose de Déficits (Semanal)'}
+                  {weeklySummaryDetails === 'exceso' && 'Jornadas Mayores a 10h (Semanal)'}
+                </h3>
+              </div>
+              <button onClick={() => setWeeklySummaryDetails(null)} className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-200 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-0 max-h-[60vh] overflow-y-auto custom-scrollbar">
+              <table className="w-full text-left">
+                <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-sm border-b border-slate-200 z-10">
+                  <tr>
+                    <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Actividad / Técnico</th>
+                    <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Horas</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {weeklyActivities.filter(a => {
+                    if (weeklySummaryDetails === 'total') return true;
+                    if (weeklySummaryDetails === 'st') return (a.overtimeHours || 0) > 0;
+                    if (weeklySummaryDetails === 'df') return (a.overtimeHours || 0) < 0;
+                    if (weeklySummaryDetails === 'exceso') return (a.totalHours || ((a.overtimeHours || 0) + 8)) > 10;
+                    return false;
+                  }).length === 0 ? (
+                    <tr>
+                      <td colSpan={2} className="px-6 py-8 text-center text-sm font-bold text-slate-400">No hay registros</td>
+                    </tr>
+                  ) : weeklyActivities.filter(a => {
+                    if (weeklySummaryDetails === 'total') return true;
+                    if (weeklySummaryDetails === 'st') return (a.overtimeHours || 0) > 0;
+                    if (weeklySummaryDetails === 'df') return (a.overtimeHours || 0) < 0;
+                    if (weeklySummaryDetails === 'exceso') return (a.totalHours || ((a.overtimeHours || 0) + 8)) > 10;
+                    return false;
+                  }).map((activity, idx) => {
+                    let value = 0;
+                    if (weeklySummaryDetails === 'total' || weeklySummaryDetails === 'exceso') value = activity.totalHours || ((activity.overtimeHours || 0) + 8);
+                    if (weeklySummaryDetails === 'st') value = activity.overtimeHours || 0;
+                    if (weeklySummaryDetails === 'df') value = Math.abs(activity.overtimeHours || 0);
+
+                    return (
+                      <tr key={`weekly-summary-row-${idx}`} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="text-sm font-bold text-slate-900 mb-1 leading-tight">{activity.title || 'Sin Título'}</div>
+                          <div className="text-[10px] font-bold text-slate-500 flex gap-2 flex-wrap">
+                            {activity.participants && activity.participants.length > 0 ? activity.participants.map(p => p.split(' ')[0]).join(', ') : activity.technicianName}
+                            <span className="bg-slate-200 px-1 rounded text-[8px] uppercase">{format(activity.date.toDate ? activity.date.toDate() : new Date(activity.date), 'dd MMM')}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <span className={cn(
+                            "text-xs font-black px-2.5 py-1 rounded-lg border inline-block",
+                            weeklySummaryDetails === 'st' ? "text-emerald-600 bg-emerald-50 border-emerald-100" :
+                            weeklySummaryDetails === 'df' ? "text-amber-600 bg-amber-50 border-amber-100" :
+                            weeklySummaryDetails === 'exceso' ? "text-brand-red bg-brand-red/5 border-brand-red/10" :
+                            "text-brand-blue bg-brand-blue/5 border-brand-blue/10"
+                          )}>
+                            {formatHours(value)}h
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+              <button 
+                onClick={() => setWeeklySummaryDetails(null)}
+                className="px-6 py-2.5 bg-slate-800 text-white rounded-xl font-bold text-xs hover:bg-slate-700 active:scale-95 transition-all"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

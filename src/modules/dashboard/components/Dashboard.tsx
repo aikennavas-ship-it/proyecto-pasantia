@@ -252,7 +252,7 @@ export default function Dashboard({ activities, technicians = [], onSeeDetails }
           onClick={() => setActiveSummary('df')}
         />
         <StatCard 
-          title={`Viáticos (Bs.${stats.perDiemAmount.toFixed(2)})`} 
+          title={`Viáticos (Bs. ${stats.perDiemAmount.toFixed(2)})`} 
           value={stats.perDiemCount} 
           icon={CheckCircle2} 
           color="text-amber-500" 
@@ -337,7 +337,7 @@ export default function Dashboard({ activities, technicians = [], onSeeDetails }
                 <Tooltip 
                   cursor={{fill: '#f8fafc'}}
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                  formatter={(value) => [`Bs.${(value as number).toFixed(2)}`, 'Monto Total']}
+                  formatter={(value) => [`Bs. ${(value as number).toFixed(2)}`, 'Monto Total']}
                 />
                 <Bar dataKey="monto" fill="#f59e0b" radius={[6, 6, 0, 0]} barSize={40} />
               </BarChart>
@@ -544,13 +544,13 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           bg: "bg-amber-50",
           items: vActivities.map(a => ({
             label: a.title,
-            value: `Bs.${Number(a.perDiemAmount || 0).toFixed(1)}`,
+            value: `Bs. ${Number(a.perDiemAmount || 0).toFixed(2)}`,
             sub: format(a.createdAt ? a.createdAt.toDate() : a.date.toDate(), 'dd/MM/yyyy')
           })),
           extra: (
             <div className="mt-4 p-3 bg-amber-500/10 rounded-xl border border-amber-500/20 text-center">
               <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Total Devengado</p>
-              <p className="text-2xl font-black text-amber-600">Bs.{total.toFixed(2)}</p>
+              <p className="text-2xl font-black text-amber-600">Bs. {total.toFixed(2)}</p>
             </div>
           )
         };
