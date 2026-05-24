@@ -48,6 +48,7 @@
         "name": { "type": "string" },
         "employeeId": { "type": "string" },
         "specialty": { "type": "string" },
+        "department": { "type": "string" },
         "status": { "type": "string", "enum": ["activo", "inactivo"] },
         "createdAt": { "type": "object" },
         "isDeleted": { "type": "boolean" },

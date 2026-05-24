@@ -1,0 +1,123 @@
+================================================================================
+           RESUMEN INTEGRAL Y ESPECÍFICO DE LA ENTRADA BACKEND Y BASE DE DATOS
+                   SISTEMA DE GESTIÓN DE HORAS EXTRAS Y PLANIFICACIÓN
+================================================================================
+
+Este documento contiene una descripción minuciosa y pormenorizada de la arquitectura
+del Backend y la Base de Datos, detallando la lógica del servidor, el modelo de
+datos, las reglas de consulta, los flujos automáticos de auditoría y operaciones.
+
+--------------------------------------------------------------------------------
+1. ESPECIFICACIÓN DE LA ARQUITECTURA DEL BACKEND (EXPRESS O COMPONENTES SERVER-SIDE)
+--------------------------------------------------------------------------------
+
+El backend del sistema opera sobre Node.js utilizando Express como servidor web y
+controlador de rutas cuando es necesario, encapsulado de forma híbrida para correr
+de manera unificada con el compilador Vite.
+
+- Servidor Híbrido:
+  * El archivo `server.ts` se compila mediante esbuild a `dist/server.cjs` para evitar
+    problemas en la resolución de módulos nativos de Node.js.
+  * Levanta el sistema en el puerto 3000 de forma predeterminada bindado a la interfaz 
+    de red global '0.0.0.0' para integraciones seguras de contenedores y nubes.
+  * Cuenta con middleware para parsear solicitudes entrantes con payload JSON, para 
+    evitar inyecciones o desbordes en peticiones de gran tamaño.
+- Middleware de Desarrollo vs Producción:
+  * En entorno de desarrollo local, monta de forma dinámica las dependencias de Vite 
+    (CreateServer con middlewareMode activo y appType: 'spa' para no romper rutas complejas de React).
+  * En modo de producción, sirve todos los binarios y bundles estáticos construidos en la 
+    carpeta `/dist` y gestiona el enrutado de retorno de SPA mediante expresiones regulares.
+
+--------------------------------------------------------------------------------
+2. COMPORTAMIENTO Y LOGICA DE LAS COLECCIONES DE FIRESTORE (LA BASE DE DATOS)
+--------------------------------------------------------------------------------
+
+La base de datos se estructura bajo el modelo NoSQL estructurado y optimizado para
+consultas en tiempo real utilizando Google Cloud Firestore con herencia directa.
+
+================================================================================
+A. COLECCIÓN: activities (REGISTRO TÉCNICO E INCIDENCIAS)
+================================================================================
+Gestiona el diario de operaciones técnicas. Las decisiones del frontend impactan
+la colección de la siguiente manera:
+
+- Campos Calculados en el Servidor/Clientes:
+  * totalHours (Suma neta de horas): Lógica decimal precisa que procesa los dos bloques 
+    horarios (`startTimeMorning` a `endTimeMorning` y `startTimeAfternoon` a `endTimeAfternoon`).
+  * Tratamiento de Guardia de Almuerzo ("hasPause"): Si se marca "NO", el backend conserva el 
+    vínculo temporal del periodo intermedio y se lo acumula directamente en la jornada total 
+    del trabajador.
+  * overtimeHours / deficitHours (Sobretiempo y Déficit): El backend deduce la diferencia 
+    en base a las 8 horas de ley establecidas en CANTV. Un valor superior a 0 es sobretiempo, 
+    un valor inferior a 0 representa una deuda de horas en nómina.
+- Eliminación Lógica (Bandeja de Entrada de la Papelera de Reciclaje):
+  * Al presionar "Eliminar" en el frontend, el documento no se borra físicamente. La base de datos 
+    recibe una operación de escritura que inyecta la bandera booleana `isDeleted: true` junto con 
+    el Timestamp (`deletedAt: Timestamp.now()`). Esto desencadena que la colección general la oculte 
+    de las vistas activas operativas de la planilla.
+
+================================================================================
+B. COLECCIÓN: technicians (PADRÓN Y WHitelist DE ACCESO OPERATIVO)
+================================================================================
+Garantiza que el personal técnico asignado a flotas o reportes de nómina corresponda
+al personal de nómina real de CANTV.
+
+- Lógica de Registro y Gestión Dual de Cuentas:
+  * Al ingresar un nuevo integrante a través del panel visual administrativo, el sistema 
+    utiliza un componente del SDK de Firebase llamado `SecondaryRegistration` para crear de forma 
+    remota las credenciales de correo electrónico, contraseña y correo en Firebase Auth, sin 
+    producir cierres forzosos de sesión web en la ventana del navegador del administrador activo.
+  * El perfil se vincula en Firestore para mapear características operativas (Especialidad, 
+    Cédula, P00, Departamento, Rol e historial de operaciones).
+
+================================================================================
+C. COLECCIÓN: notifications (CENTRO DE TRAZABILIDAD Y EVENTOS)
+================================================================================
+Garantiza el registro y seguimiento inmediato de las acciones de los usuarios en el sistema.
+
+- Flujos Automáticos de Generación de Eventos:
+  Al interactuar con la interfaz del programa, se graban los siguientes reportes en la colección:
+  * Inicio de Sesión de Personal (`auth_login`): Se graba automáticamente un documento cuando un 
+    supervisor o técnico ingresa mediante autenticación al panel, registrando su ID, correo y fecha de login.
+  * Inserción de Nueva Labor (`activity_add`): Se crea una alerta visible que detalla el título del 
+    incidente registrado y el nombre del creador.
+  * Modificación de Información (`activity_edit`): Almacena la versión modificada, el ID de la 
+    labor afectada y el creador de la modificación.
+  * Altas y Bajas de Personal (`tech_add` / `tech_edit`): Alertas asociadas a la gestión organizativa del personal.
+  * Papelera y Restauraciones (`moved_to_trash` / `restore`): Traza el ciclo de vida del borrado lógico.
+  * Eliminaciones Físicas Definitivas (`deleted_permanently`): Se emite un registro para auditorías 
+    que avisa de la eliminación física e irreversible de un elemento.
+- Lógica Multiusuario de Marcas de Lectura:
+  * Cada documento contiene un arreglo indexado de strings llamado `readBy`. Cuando un administrador 
+    o supervisor presiona el botón "Marcar todo como leído" en el frontend, el sistema realiza una 
+    operación colectiva de base de datos añadiendo el ID de su cuenta en dicho arreglo. De esta manera, 
+    el conteo individual de alertas se personaliza al comparar si el UID de la sesión está presente en `readBy`.
+
+--------------------------------------------------------------------------------
+3. POLÍTICAS DE SEGURIDAD OPERATIVA Y REGLAS DE FIREBASE (firestore.rules)
+--------------------------------------------------------------------------------
+
+La seguridad de las colecciones se controla mediante un set de reglas estrictas 
+que validan los permisos en la base de datos antes de realizar cualquier cambio:
+
+1. Estructura de Reglas de Transacciones:
+   - Colección `activities`:
+     * Lectura (get/list): Permitido a todos los usuarios que hayan iniciado sesión correspondiente (`request.auth != null`).
+     * Escritura (create/update): Permitido a usuarios con el rol verificado de 'admin' o de 'supervisor'. Los técnicos tienen permisos restringidos para evitar ediciones de nómina de otros compañeros.
+     * Eliminación permanente (delete): Restringido estrictamente al rol `admin` de mayor rango (Administrador General).
+   - Colección `technicians`:
+     * Escritura total (create/update/delete): Prohibido para todo usuario que no posea privilegios administrativos directos (`isAdmin()`). Esto previene el autoregistro fraudulento o modificaciones de nómina por parte de terceros.
+
+--------------------------------------------------------------------------------
+4. CONTROL Y PROCESAMIENTO DE CRÓNOLOGA EN BASE DE DATOS
+--------------------------------------------------------------------------------
+
+1. Operaciones Estrictas sobre Tipos de Datos Temporal (Timestamps):
+   - Almacena las fechas en formato nativo UTC Timestamp en los servidores de Google Firebase, 
+     lo que evita desajustes de horarios causados por diferentes zonas horarias locales al consultar 
+     desde distintas computadoras.
+2. Comportamiento Auto-Purga de Papelera:
+   - Se procesan comparaciones lógicas directas: `Fecha Actual - Fecha de Eliminación > 30 días`. 
+     Los elementos que cumplan con este criterio de base de datos se clasifican como obsoletos y 
+     quedan expuestos a ser purgados definitivamente del sistema.
+================================================================================

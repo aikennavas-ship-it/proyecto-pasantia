@@ -1,0 +1,193 @@
+================================================================================
+          GUÍA COMPLETA DE INSTALACIÓN E IMPLEMENTACIÓN LOCAL DEL SISTEMA
+                   GERENCIA DE DATOS Y TRANSMISIÓN · CANTV
+================================================================================
+
+Esta guía interactiva detalla paso a paso cómo descargar, configurar, poblar
+la base de datos y correr de manera 100% local el sistema de Planificación y 
+Gestión de Horas Extras de CANTV en tu plataforma de desarrollo personal.
+
+--------------------------------------------------------------------------------
+1. REQUISITOS PREVIOS DEL ENTORNO LOCAL
+--------------------------------------------------------------------------------
+
+Antes de iniciar la puesta en marcha, asegúrate de tener instalados en tu sistema:
+
+1. Node.js (Versión recomendada LTS: v18.x o superior / v20.x+ sugerida).
+2. NPM (Viene instalado con Node.js por defecto: v9.x o superior).
+3. Git (Opcional, para clonado y versionado del código).
+4. Cuenta de Google Firebase (Para poder tener tu propio panel independiente, 
+   o puedes trabajar conectado al de desarrollo utilizando la misma configuración).
+
+--------------------------------------------------------------------------------
+2. DESCARGA Y EXTRACCIÓN DE ARCHIVOS
+--------------------------------------------------------------------------------
+
+Para trasladar tu espacio de trabajo desde la IA a tu máquina local:
+
+1. Haz clic en el Menú de Configuración de la IA en la barra superior derecha.
+2. Selecciona "Export to ZIP" (Exportar como archivo comprimido ZIP).
+3. Descomprime el archivo en un directorio preferente de tu máquina local:
+   (Ej. `C:\Proyectos\CANTV-App` en Windows o `/Users/tu_usuario/CANTV-App` en Mac).
+4. Abre la carpeta del proyecto en tu editor de código de confianza (Recomendado: 
+   Visual Studio Code).
+
+--------------------------------------------------------------------------------
+3. INSTALACIÓN DE DEPENDENCIAS LOCALES
+--------------------------------------------------------------------------------
+
+La plataforma administra dependencias cruzadas entre React, Express y utilidades 
+de cálculo matemático y formato. Abre la consola de comandos de tu sistema, sitúate 
+en la base del proyecto y ejecuta:
+
+```bash
+# Navega al directorio raíz del proyecto
+cd ruta/a/tu/servidor/descomprimido
+
+# Instala todas las librerías descritas en el package.json
+npm install
+```
+
+--------------------------------------------------------------------------------
+4. CONFIGURACIÓN DE CONEXIÓN A LA BASE DE DATOS (FIREBASE DE EXTREMO A EXTREMO)
+--------------------------------------------------------------------------------
+
+El sistema está configurado para extraer sus parámetros de acceso de manera rápida 
+del archivo de manifiesto `firebase-applet-config.json` ubicado en el directorio raíz.
+
+OPCIÓN A: Trabajar directamente con la base de datos de pruebas (Nube activa)
+------------------------------------------------------------------------------
+Si lo que deseas es testear la base de datos actual en vivo mientras construyes, 
+solo necesitas mantener intacto el archivo `firebase-applet-config.json` que viene 
+en la descarga del ZIP e iniciar el servidor (Paso 6). Los registros que crees se 
+guardarán en la nube.
+
+OPCIÓN B: Configurar tu base de datos de Firebase local y privada (Recomendada)
+------------------------------------------------------------------------------
+Si quieres que tu base de datos sea totalmente limpia e independiente para tu 
+desarrollo personal, sigue estos pasos:
+
+1. Ve a la consola oficial de Firebase: https://console.firebase.google.com/
+2. Haz clic en "Agregar proyecto" y asígnale un nombre (ej. `cantv-horas-extras`).
+3. En el menú lateral izquierdo, ve a "Autenticación" (Authentication) -> Comenzar 
+   y habilita el proveedor de "Correo electrónico/Contraseña" (Email/Password).
+4. Ve a "Firestore Database" -> Crear base de datos -> Iniciar en modo prueba e 
+   inicializa una instancia.
+5. Haz clic en el icono de Engranaje superior (Configuración del proyecto) -> 
+   Configuración del Proyecto.
+6. En la parte inferior, debajo de "Tus Apps", haz clic en el icono de web (`</>`) 
+   para registrar una nueva aplicación.
+7. Firebase te entregará un objeto de configuración similar a este:
+   ```json
+   {
+     "apiKey": "AIzaSy...",
+     "authDomain": "tu-proyecto.firebaseapp.com",
+     "projectId": "tu-proyecto",
+     "storageBucket": "tu-proyecto.firebasestorage.app",
+     "messagingSenderId": "87654321",
+     "appId": "1:87654321:web:abcdef"
+   }
+   ```
+8. Copia dichos campos y pégalos abriendo el archivo local `firebase-applet-config.json` 
+   en tu editor de código, reemplazando los existentes. Guarda el archivo.
+
+--------------------------------------------------------------------------------
+5. CONFIGURACIÓN DE VARIABLES DE ENTORNO LOCALES
+--------------------------------------------------------------------------------
+
+El proyecto posee soporte de variables de entorno para funciones premium.
+
+1. En el directorio raíz de tu proyecto local, crea un archivo de texto plano 
+   llamado exactamente `.env`.
+2. Abre `.env.example` para guiarte, copia su contenido y pégalo dentro de tu 
+   nuevo archivo `.env`.
+3. Rellena los campos con tus parámetros secretos requeridos:
+   ```env
+   # Llave secreta de la API de Gemini (Para soporte IA o bots automáticos de análisis)
+   GEMINI_API_KEY="AIzaSyYourSecretGeminiKeyHere"
+
+   # URL de ejecución local preferida
+   APP_URL="http://localhost:3000"
+   ```
+
+--------------------------------------------------------------------------------
+6. EJECUCIÓN EN MODO DESARROLLO (LIVE RELOADING / TIEMPO REAL)
+--------------------------------------------------------------------------------
+
+Para levantar el servidor web híbrido Express + Vite de alta velocidad localmente, 
+con soporte para actualización automática de código en tiempo real al guardar:
+
+```bash
+# Lanza el dev script (Utiliza tsx para ejecutar server.ts)
+npm run dev
+```
+
+Una vez ejecutado, la terminal te indicará que el puerto está listo. Abre tu 
+navegador web e ingresa en:
+URL: http://localhost:3000
+
+Cualquier cambio que realices en el código del Frontend o Backend se verá reflejado 
+de forma inmediata.
+
+--------------------------------------------------------------------------------
+7. ALIMENTAR LA BASE DE DATOS LOCAL CON DATOS SEMILLAS (SEEDING DE PRUEBA)
+--------------------------------------------------------------------------------
+
+Para no iniciar el sistema local con pantallas vacías, el sistema incorpora un 
+mecanismo de carga de datos automatizado (Dummy Seeds) con incidentes reales y 
+técnicos de simulación (con nombres, cédulas, P00):
+
+A través de la Consola CLI:
+--------------------------
+Puedes correr el script de siembra ejecutando el archivo TypeScript estructurado:
+```bash
+npx tsx src/scripts/seed.ts
+```
+Este comando cargará registros históricos de la Gerencia de Datos y Transmisión, 
+creando técnicos listos para realizar asignaciones en tu base de datos local.
+
+A través del Frontend (Botón Interactivo del Administrador):
+-----------------------------------------------------------
+1. Inicia sesión en tu servidor local con una cuenta administradora.
+2. En la parte inferior izquierda o en el panel de configuración, haz clic en el 
+   botón interactivo "Inicializar Datos de Simulación". Esto ejecutará la librería 
+   `seedDummyData.ts` de forma interna.
+
+--------------------------------------------------------------------------------
+8. COMPILACIÓN DE SISTEMA Y PUESTA EN PRODUCCIÓN LOCAL
+--------------------------------------------------------------------------------
+
+Si lo que deseas es probar el flujo de rendimiento oficial, o simular un servidor 
+de producción local optimizado para carga pesada, ejecuta los comandos de la 
+siguiente manera:
+
+```bash
+# 1. Limpia cualquier build antigua
+npm run clean
+
+# 2. Genera los archivos estáticos de React y compila server.ts usando Esbuild a CommonJS
+npm run build
+
+# 3. Lanza el servidor en modo producción local robusto
+npm run start
+```
+
+Vínculo del Servidor de Producción: http://localhost:3000
+
+--------------------------------------------------------------------------------
+9. SOLUCIÓN A POSIBLES INCONSISTENCIAS / COMPILACIONES LOCALES
+--------------------------------------------------------------------------------
+
+1. Error: "firebase-applet-config.json not found" o vacíos:
+   - Asegúrate de tener el archivo `firebase-applet-config.json` en la carpeta 
+     raíz y que sea un JSON válido (con llaves curbas `{}`).
+2. Error TS: "Cannot find module 'vite'" o de tsx:
+   - Esto indica que no se han completado las instalaciones dev dependencies. 
+     Para solucionarlo, borra la carpeta `node_modules` y reinstala limbiamente 
+     usando `npm install`.
+3. Error: "Port 3000 is already in use" (Puerto ocupado):
+   - Esto indica que otra aplicación local está reteniendo tu puerto 3000. 
+     Cierra la aplicación que causa el conflicto o edita temporalmente la línea 
+     `const PORT = 3000;` dentro del archivo `server.ts` por otro puerto de tu 
+     elección (ej. `3001` o `8080`).
+================================================================================

@@ -5,7 +5,7 @@ import { cn } from '../../../lib/utils';
 
 interface Notification {
   id: string;
-  type: 'activity_add' | 'activity_edit' | 'tech_add' | 'tech_edit' | 'restore' | 'fatigue_alert';
+  type: 'activity_add' | 'activity_edit' | 'tech_add' | 'tech_edit' | 'restore' | 'fatigue_alert' | 'auth_login' | 'auth_register' | 'deleted_permanently' | 'moved_to_trash';
   message: string;
   userName?: string;
   createdAt: any;
@@ -29,7 +29,12 @@ export default function NotificationCenter({ notifications, onMarkAsRead, onClos
       case 'activity_add': return <Plus size={14} className="text-emerald-600" />;
       case 'activity_edit': return <FileEdit size={14} className="text-brand-blue" />;
       case 'tech_add': return <UserPlus size={14} className="text-slate-600" />;
+      case 'tech_edit': return <FileEdit size={14} className="text-slate-600" />;
       case 'restore': return <Clock size={14} className="text-orange-600" />;
+      case 'auth_login': return <Check size={14} className="text-emerald-500" />;
+      case 'auth_register': return <UserPlus size={14} className="text-indigo-500" />;
+      case 'deleted_permanently': return <Trash2 size={14} className="text-brand-red" />;
+      case 'moved_to_trash': return <Trash2 size={14} className="text-amber-500" />;
       default: return <Bell size={14} className="text-slate-400" />;
     }
   };

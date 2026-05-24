@@ -25,6 +25,8 @@ export interface Activity {
   justification?: string;
   documentation?: string;
   driver?: string;
+  code?: 'HORA' | 'PRIM' | 'PREM';
+  cause?: string;
   technicianId: string;
   technicianName: string;
   adminId?: string; // UID of the user who owns/created this record
@@ -54,6 +56,7 @@ export interface Technician {
   role?: 'admin' | 'supervisor' | 'tecnico';
   idCard?: string;
   specialty: string;
+  department?: string;
   phoneNumber?: string;
   status: string;
   createdAt: Timestamp;

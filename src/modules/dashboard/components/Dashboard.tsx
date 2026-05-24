@@ -15,10 +15,10 @@ import {
   AreaChart, Area, PieChart, Pie, Cell, Legend
 } from 'recharts';
 import { Activity, Technician } from '../../../types';
-import { ClipboardList, CheckCircle2, Clock, AlertTriangle, LayoutDashboard, TrendingUp, Users, ShieldCheck, Eye, X, ArrowUpRight, DollarSign } from 'lucide-react';
+import { ClipboardList, CheckCircle2, Clock, AlertTriangle, LayoutDashboard, TrendingUp, Users, ShieldCheck, Eye, X, ArrowUpRight, DollarSign, Timer, FileText, Truck } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { formatHours } from '../../activities/components/ActivityForm';
-import { format, subDays, isAfter, startOfWeek, isSameWeek } from 'date-fns';
+import { format, subDays, isAfter, startOfWeek, endOfWeek, isSameWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -30,7 +30,7 @@ interface DashboardProps {
 
 const COLORS = ['#004a99', '#e30613', '#10b981', '#f59e0b', '#6366f1', '#64748b'];
 
-type SummaryType = 'labores' | 'st' | 'df' | 'viaticos' | 'fatiga' | 'personal' | null;
+type SummaryType = 'labores' | 'st' | 'df' | 'viaticos' | 'fatiga' | 'personal' | 'promedio' | 'documentos' | 'flota' | null;
 
 export default function Dashboard({ activities, technicians = [], onSeeDetails }: DashboardProps) {
   const [activeSummary, setActiveSummary] = useState<SummaryType>(null);
@@ -41,10 +41,18 @@ export default function Dashboard({ activities, technicians = [], onSeeDetails }
     'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
   ];
-  const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
+  const currentYear = new Date().getFullYear();
+  const startYear = 2024;
+  const numYears = Math.max(5, currentYear - startYear + 1);
+  const years = Array.from({ length: numYears }, (_, i) => currentYear - i);
 
   const filteredActivities = activities.filter(a => {
-    const date = a.date.toDate();
+    let date;
+    if (a.date && typeof a.date.toDate === 'function') {
+      date = a.date.toDate();
+    } else {
+      date = new Date(a.date as any);
+    }
     return date.getFullYear() === selectedYear && date.getMonth() === selectedMonth;
   });
 
@@ -65,8 +73,17 @@ export default function Dashboard({ activities, technicians = [], onSeeDetails }
   Object.entries(techActivitiesRecord).forEach(([name, acts]) => {
     const weeklyOT: Record<string, number> = {};
     acts.forEach(a => {
+      let aDate;
+      if (a.date && typeof a.date.toDate === 'function') {
+        aDate = a.date.toDate();
+      } else {
+        aDate = new Date(a.date as any);
+      }
+
       if (a.overtimeHours && a.overtimeHours > 0) {
-        const weekKey = format(startOfWeek(a.date.toDate(), { weekStartsOn: 1 }), 'ww');
+        const start = startOfWeek(aDate, { weekStartsOn: 1 });
+        const end = endOfWeek(aDate, { weekStartsOn: 1 });
+        const weekKey = `${format(start, 'dd/MM/yy')} al ${format(end, 'dd/MM/yy')}`;
         weeklyOT[weekKey] = (weeklyOT[weekKey] || 0) + a.overtimeHours;
       }
       
@@ -75,19 +92,19 @@ export default function Dashboard({ activities, technicians = [], onSeeDetails }
           technician: name,
           type: 'diaria',
           value: a.overtimeHours,
-          date: format(a.date.toDate(), 'dd/MM'),
+          date: format(aDate, 'dd/MM/yy'),
           description: `Exceso jornada diaria (${formatHours(a.overtimeHours + 8)}h)`
         });
       }
     });
 
-    Object.entries(weeklyOT).forEach(([week, total]) => {
+    Object.entries(weeklyOT).forEach(([weekKey, total]) => {
       if (total > 10) {
         fatigueAlerts.push({
           technician: name,
           type: 'semanal',
           value: total,
-          week: `Semana ${week}`,
+          week: `Sem ${weekKey.split(' ')[0]} - ${weekKey.split(' ')[2]}`, // This looks better
           description: `Exceso semanal LOTTT (${formatHours(total)}h extra)`
         });
       }
@@ -100,6 +117,22 @@ export default function Dashboard({ activities, technicians = [], onSeeDetails }
   const totalPerDiemCount = filteredActivities.filter(a => a.hasPerDiem).length;
   const totalTechnicians = technicians.length;
 
+  const totalActivityHours = filteredActivities.reduce((acc, a) => acc + (a.totalHours || 0), 0);
+  const avgHours = filteredActivities.length > 0 ? (totalActivityHours / filteredActivities.length) : 0;
+  
+  const documentedCount = filteredActivities.filter(a => a.documentation === 'SI').length;
+  const undocumentedCount = filteredActivities.filter(a => a.documentation === 'NO').length;
+
+  const fleetCounts: Record<string, number> = {};
+  filteredActivities.forEach(a => {
+    if (a.fleet && a.fleet !== 'N/A' && a.fleet.trim() !== '') {
+      fleetCounts[a.fleet] = (fleetCounts[a.fleet] || 0) + 1;
+    }
+  });
+  const topFleetData = Object.entries(fleetCounts).length > 0 
+    ? Object.entries(fleetCounts).sort((a, b) => b[1] - a[1])[0]
+    : ['N/A', 0];
+
   const stats = {
     total: filteredActivities.length,
     technicians: totalTechnicians,
@@ -107,6 +140,10 @@ export default function Dashboard({ activities, technicians = [], onSeeDetails }
     df: totalDF,
     perDiemCount: totalPerDiemCount,
     perDiemAmount: totalPerDiemAmount,
+    avgHours: avgHours,
+    documentedCount: documentedCount,
+    topFleetStr: topFleetData[0] as string,
+    topFleetCount: topFleetData[1] as number
   };
 
   // Specialty Data Distribution for Pie chart
@@ -129,18 +166,21 @@ export default function Dashboard({ activities, technicians = [], onSeeDetails }
     .sort((a, b) => b.value - a.value)
     .slice(0, 6);
 
-  // Area chart data: Activities last 14 days
-  const fourteenDaysAgo = subDays(new Date(), 14);
-  const recentActivities = filteredActivities.filter(a => isAfter(a.date.toDate(), fourteenDaysAgo));
-  
-  const activitiesByDate = recentActivities.reduce((acc: any, act) => {
-    const d = format(act.date.toDate(), 'dd MMM', { locale: es });
+  // Area chart data: Activities in selected month
+  const activitiesByDate = filteredActivities.reduce((acc: any, act) => {
+    let d;
+    if (act.date && typeof act.date.toDate === 'function') {
+      d = format(act.date.toDate(), 'dd MMM', { locale: es });
+    } else {
+      d = format(new Date(act.date as any), 'dd MMM', { locale: es });
+    }
     acc[d] = (acc[d] || 0) + 1;
     return acc;
   }, {});
 
-  const chronologicalDates = Array.from({ length: 14 }).map((_, i) => {
-    const d = subDays(new Date(), 13 - i);
+  const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+  const chronologicalDates = Array.from({ length: daysInMonth }).map((_, i) => {
+    const d = new Date(selectedYear, selectedMonth, i + 1);
     return format(d, 'dd MMM', { locale: es });
   });
 
@@ -188,37 +228,53 @@ export default function Dashboard({ activities, technicians = [], onSeeDetails }
   return (
     <div className="space-y-8 animate-in fade-in duration-700 pb-12">
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 bg-white p-6 rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02),0_15px_35px_rgba(0,0,0,0.06)] border border-slate-200">
-        <div className="flex items-center gap-4 w-full">
-          <div className="w-12 h-12 sm:w-14 sm:h-14 bg-brand-blue rounded-2xl flex items-center justify-center text-white shadow-lg shadow-brand-blue/30 shrink-0">
-            <LayoutDashboard size={28} />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full xl:w-auto">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-brand-blue to-blue-600 rounded-3xl flex items-center justify-center text-white shadow-lg shadow-brand-blue/15 shrink-0">
+            <LayoutDashboard size={26} className="sm:size-7" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-xl font-display font-black text-slate-900 tracking-tight truncate">Panel Principal</h2>
-            <p className="text-xs text-slate-500 font-medium truncate">Métricas para {months[selectedMonth]} {selectedYear}</p>
+            <h2 className="text-lg sm:text-xl font-display font-black text-slate-900 tracking-tight uppercase truncate">Panel Principal</h2>
+            <div className="flex flex-wrap items-center gap-2 mt-0.5">
+              <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Métricas para {months[selectedMonth]} {selectedYear}</p>
+              <div className="hidden sm:block w-1.5 h-1.5 rounded-full bg-slate-300" />
+              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-1">
+                Central Maracay 4357
+              </p>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center bg-slate-50 p-1 rounded-2xl border border-slate-200 shrink-0 ml-auto">
+        <div className="flex items-center bg-slate-50 p-1.5 rounded-2xl border border-slate-200 shadow-sm shrink-0 w-fit">
           <select 
-            className="bg-transparent border-none text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-600 focus:ring-0 cursor-pointer px-3 sm:px-4 py-2 text-center min-w-[100px] sm:min-w-[120px]"
+            className="flex-1 sm:flex-initial bg-transparent border-none text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-600 focus:ring-0 cursor-pointer px-2 py-1.5 text-center min-w-[90px] sm:min-w-[120px] appearance-none outline-none focus:outline-none"
+            style={{ backgroundImage: 'none', paddingLeft: '8px', paddingRight: '8px', textAlignLast: 'center' }}
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
           >
-            {months.map((m, i) => <option key={m} value={i}>{m}</option>)}
+            {months.map((m, i) => (
+              <option key={m} value={i} className="bg-white text-slate-800 font-sans font-bold uppercase tracking-normal text-left">
+                {m}
+              </option>
+            ))}
           </select>
-          <div className="w-px h-4 bg-slate-200" />
+          <div className="w-px h-4 bg-slate-200 shrink-0" />
           <select 
-            className="bg-transparent border-none text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-600 focus:ring-0 cursor-pointer px-3 sm:px-4 py-2 text-center min-w-[80px]"
+            className="flex-1 sm:flex-initial bg-transparent border-none text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-600 focus:ring-0 cursor-pointer px-2 py-1.5 text-center min-w-[70px] sm:min-w-[80px] appearance-none outline-none focus:outline-none block"
+            style={{ backgroundImage: 'none', paddingLeft: '8px', paddingRight: '8px', textAlignLast: 'center' }}
             value={selectedYear}
             onChange={(e) => setSelectedYear(parseInt(e.target.value))}
           >
-            {years.map(y => <option key={y} value={y}>{y}</option>)}
+            {years.map(y => (
+              <option key={y} value={y} className="bg-white text-slate-800 font-sans font-bold uppercase tracking-normal text-left">
+                {y}
+              </option>
+            ))}
           </select>
         </div>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard 
           title="Total Labores" 
           value={stats.total} 
@@ -258,6 +314,30 @@ export default function Dashboard({ activities, technicians = [], onSeeDetails }
           color="text-amber-500" 
           bg="bg-amber-50" 
           onClick={() => setActiveSummary('viaticos')}
+        />
+        <StatCard 
+          title="Promedio por Labor" 
+          value={`${stats.avgHours.toFixed(1)}h`} 
+          icon={Timer} 
+          color="text-cyan-500" 
+          bg="bg-cyan-50" 
+          onClick={() => setActiveSummary('promedio')}
+        />
+        <StatCard 
+          title="Documentadas" 
+          value={stats.documentedCount} 
+          icon={FileText} 
+          color="text-teal-500" 
+          bg="bg-teal-50" 
+          onClick={() => setActiveSummary('documentos')}
+        />
+        <StatCard 
+          title={`Flota: ${stats.topFleetStr.substring(0, 10)}${stats.topFleetStr.length > 10 ? '...' : ''}`} 
+          value={stats.topFleetCount > 0 ? stats.topFleetCount : 'N/A'} 
+          icon={Truck} 
+          color="text-slate-600" 
+          bg="bg-slate-100" 
+          onClick={() => setActiveSummary('flota')}
         />
       </div>
 
@@ -447,6 +527,16 @@ export default function Dashboard({ activities, technicians = [], onSeeDetails }
   );
 }
 
+const formatActivityDate = (a: any) => {
+  let d;
+  if (a.createdAt) {
+    d = typeof a.createdAt.toDate === 'function' ? a.createdAt.toDate() : new Date(a.createdAt);
+  } else {
+    d = typeof a.date.toDate === 'function' ? a.date.toDate() : new Date(a.date);
+  }
+  return format(d, 'dd/MM/yyyy');
+};
+
 function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeDetails, fatigueAlerts = [] }: { 
   type: SummaryType, 
   onClose: () => void, 
@@ -489,7 +579,7 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           bg: "bg-brand-blue/10",
           items: activities.slice(0, 10).map(a => ({
             label: a.title,
-            value: format(a.createdAt ? a.createdAt.toDate() : a.date.toDate(), 'dd/MM/yyyy'),
+            value: formatActivityDate(a),
             sub: a.incidentNumber || 'S/N'
           })),
           extra: (
@@ -516,7 +606,7 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           items: stActivities.map(a => ({
             label: a.title,
             value: `+${formatHours(a.overtimeHours!)}`,
-            sub: format(a.createdAt ? a.createdAt.toDate() : a.date.toDate(), 'dd/MM/yyyy')
+            sub: formatActivityDate(a)
           })),
           extra: <p className="mt-4 text-[10px] text-center text-slate-400 font-medium">Mostrando las últimas incidencias con tiempo extra productivo.</p>
         };
@@ -530,7 +620,7 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           items: dfActivities.map(a => ({
             label: a.title,
             value: formatHours(a.overtimeHours!),
-            sub: format(a.createdAt ? a.createdAt.toDate() : a.date.toDate(), 'dd/MM/yyyy')
+            sub: formatActivityDate(a)
           })),
           extra: <p className="mt-4 text-[10px] text-center text-slate-400 font-medium">Registro de labores con tiempo por debajo del estándar de 8h.</p>
         };
@@ -545,7 +635,7 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           items: vActivities.map(a => ({
             label: a.title,
             value: `Bs. ${Number(a.perDiemAmount || 0).toFixed(2)}`,
-            sub: format(a.createdAt ? a.createdAt.toDate() : a.date.toDate(), 'dd/MM/yyyy')
+            sub: formatActivityDate(a)
           })),
           extra: (
             <div className="mt-4 p-3 bg-amber-500/10 rounded-xl border border-amber-500/20 text-center">
@@ -553,6 +643,65 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
               <p className="text-2xl font-black text-amber-600">Bs. {total.toFixed(2)}</p>
             </div>
           )
+        };
+      case 'promedio':
+        return {
+          title: "Promedio de Horas por Labor",
+          icon: Timer,
+          color: "text-cyan-500",
+          bg: "bg-cyan-50",
+          items: activities.slice(0, 10).map(a => ({
+            label: a.title,
+            value: formatHours(a.totalHours || 0),
+            sub: formatActivityDate(a)
+          })),
+          extra: <p className="mt-4 text-[10px] text-center text-slate-400 font-medium">Refleja el tiempo promedio que toma cada actividad registrada.</p>
+        };
+      case 'documentos':
+        const docActivities = activities.filter(a => a.documentation === 'SI').slice(0, 10);
+        return {
+          title: "Labores Documentadas",
+          icon: FileText,
+          color: "text-teal-500",
+          bg: "bg-teal-50",
+          items: docActivities.map(a => ({
+            label: a.title,
+            value: "Documentado",
+            sub: formatActivityDate(a)
+          })),
+          extra: (
+            <div className="mt-4 p-3 bg-teal-50 rounded-xl border border-teal-100 flex justify-around">
+               <div className="text-center">
+                 <p className="text-[10px] uppercase font-bold text-teal-600">Documentadas</p>
+                 <p className="text-xl font-black text-teal-700">{activities.filter(a => a.documentation === 'SI').length}</p>
+               </div>
+               <div className="text-center">
+                 <p className="text-[10px] uppercase font-bold text-slate-500">Sin Documentar</p>
+                 <p className="text-xl font-black text-slate-700">{activities.filter(a => a.documentation === 'NO').length}</p>
+               </div>
+            </div>
+          )
+        };
+      case 'flota':
+        const _fleetCounts: Record<string, number> = {};
+        activities.forEach(a => {
+          if (a.fleet && a.fleet !== 'N/A' && a.fleet.trim() !== '') {
+            _fleetCounts[a.fleet] = (_fleetCounts[a.fleet] || 0) + 1;
+          }
+        });
+        const fleetsList = Object.entries(_fleetCounts).sort((a, b) => b[1] - a[1]);
+        
+        return {
+          title: "Uso de Flotas (Vehículos)",
+          icon: Truck,
+          color: "text-slate-600",
+          bg: "bg-slate-100",
+          items: fleetsList.slice(0, 10).map(([f, count]) => ({
+            label: f,
+            value: `${count} uso(s)`,
+            sub: "Flota vehicular"
+          })),
+          extra: <p className="mt-4 text-[10px] text-center text-slate-400 font-medium">Clasificación de los vehículos más empleados en operaciones.</p>
         };
       case 'fatiga':
         return {
@@ -590,7 +739,7 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
     onClose();
     if (type === 'viaticos') {
       onSeeDetails?.('reports');
-    } else if (type === 'labores' || type === 'st' || type === 'df') {
+    } else if (type === 'labores' || type === 'st' || type === 'df' || type === 'promedio' || type === 'documentos' || type === 'flota') {
       onSeeDetails?.('activities');
     } else if (type === 'personal') {
       onSeeDetails?.('technicians');
@@ -609,11 +758,11 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
         initial={{ scale: 0.9, opacity: 0, y: 20 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.9, opacity: 0, y: 20 }}
-        className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden border border-slate-200"
+        className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden border border-slate-200"
         onClick={e => e.stopPropagation()}
       >
-        <div className="p-6">
-          <div className="flex justify-between items-start mb-6">
+        <div className="p-5 sm:p-6 pb-4 sm:pb-5 border-b border-slate-100 shrink-0">
+          <div className="flex justify-between items-start">
             <div className="flex items-center gap-3">
               <div className={cn("p-3 rounded-2xl", content.bg, content.color)}>
                 <Icon size={24} />
@@ -630,8 +779,10 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
               <X size={20} />
             </button>
           </div>
+        </div>
 
-          <div className="space-y-2 max-h-[350px] overflow-y-auto px-1 custom-scrollbar">
+        <div className="p-5 sm:p-6 overflow-y-auto flex-1 custom-scrollbar">
+          <div className="space-y-2">
             {content.items.map((item, i) => (
               <div key={`summary-item-${type}-${i}-${item.label}`} className="flex justify-between items-center p-3 rounded-2xl border border-slate-100 hover:border-slate-200 transition-all hover:bg-slate-50 group">
                 <div className="flex-1 min-w-0 mr-4">
@@ -651,22 +802,22 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           </div>
 
           {content.extra}
+        </div>
 
-          <div className="mt-6 flex flex-col gap-2">
-            <button 
-              onClick={handleSeeDetails}
-              className="w-full py-4 bg-brand-blue/10 text-brand-blue rounded-2xl font-bold text-xs hover:bg-brand-blue/20 transition-all flex items-center justify-center gap-2"
-            >
-              Ver detalles completos
-              <ArrowUpRight size={14} />
-            </button>
-            <button 
-              onClick={onClose}
-              className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold text-xs hover:bg-slate-800 transition-all shadow-lg active:scale-95"
-            >
-              Cerrar Resumen
-            </button>
-          </div>
+        <div className="p-5 sm:p-6 pt-4 sm:pt-5 border-t border-slate-100 flex flex-col gap-2 shrink-0 bg-slate-50/50">
+          <button 
+            onClick={handleSeeDetails}
+            className="w-full py-4 bg-brand-blue/10 text-brand-blue rounded-2xl font-bold text-xs hover:bg-brand-blue/20 transition-all flex items-center justify-center gap-2"
+          >
+            Ver detalles completos
+            <ArrowUpRight size={14} />
+          </button>
+          <button 
+            onClick={onClose}
+            className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold text-xs hover:bg-slate-800 transition-all shadow-lg active:scale-95"
+          >
+            Cerrar Resumen
+          </button>
         </div>
       </motion.div>
     </motion.div>

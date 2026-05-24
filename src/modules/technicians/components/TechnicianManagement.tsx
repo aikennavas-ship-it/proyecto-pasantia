@@ -27,27 +27,62 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
   const [isFormOpen, setIsFormOpen] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState('');
 
-  const filteredTechs = technicians.filter(t => 
-    (t.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (t.employeeId || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredTechs = React.useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) return technicians;
+
+    // 1. C.I. (Cedula): If query starts with "v-" (or "v" followed by numbers/dash)
+    const isCISearch = query.startsWith('v-') || (query.startsWith('v') && (query === 'v' || /\d/.test(query)));
+
+    // 2. POO: If query contains only numbers directly
+    const isNumeric = /^\d+$/.test(query);
+
+    return technicians.filter(t => {
+      const name = (t.name || '').toLowerCase();
+      const idCard = (t.idCard || '').toLowerCase();
+      const employeeId = (t.employeeId || '').toLowerCase();
+
+      if (isCISearch) {
+        // Compare stripped characters for matching e.g., 'v-12.345.678' easily
+        const cleanQuery = query.replace(/[^a-z0-9]/g, '');
+        const cleanIdCard = idCard.replace(/[^a-z0-9]/g, '');
+        return cleanIdCard.includes(cleanQuery);
+      }
+
+      if (isNumeric) {
+        // Search by POO (employeeId) directly
+        const cleanQuery = query.replace(/[^0-9]/g, '');
+        const cleanEmployeeId = employeeId.replace(/[^0-9]/g, '');
+        return cleanEmployeeId.includes(cleanQuery);
+      }
+
+      // Default: Search by Name when typing letters
+      return name.includes(query);
+    });
+  }, [technicians, searchTerm]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 bg-white p-6 rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02),0_15px_35px_rgba(0,0,0,0.06)] border border-slate-200">
-        <div className="flex items-center gap-4 w-full">
-          <div className="w-12 h-12 sm:w-14 sm:h-14 bg-brand-blue rounded-2xl flex items-center justify-center text-white shadow-lg shadow-brand-blue/30 shrink-0">
-            <Shield size={28} />
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 bg-white p-6 rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02),0_15px_35px_rgba(0,0,0,0.06)] border border-slate-200">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full xl:w-auto">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-brand-blue to-blue-600 rounded-3xl flex items-center justify-center text-white shadow-lg shadow-brand-blue/15 shrink-0">
+            <Shield size={26} className="sm:size-7" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-xl font-display font-black text-slate-900 tracking-tight truncate">Personal y Accesos</h2>
-            <p className="text-xs text-slate-500 font-medium truncate">Control de Usuarios - Gerencia de Datos</p>
+            <h2 className="text-lg sm:text-xl font-display font-black text-slate-900 tracking-tight uppercase truncate">Personal y Accesos</h2>
+            <div className="flex flex-wrap items-center gap-2 mt-0.5">
+              <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Control de Usuarios y ROLES</p>
+              <div className="hidden sm:block w-1.5 h-1.5 rounded-full bg-slate-300" />
+              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-1">
+                Central Maracay 4357
+              </p>
+            </div>
           </div>
         </div>
         {onAddTechnician && (
           <button 
             onClick={() => setIsFormOpen(true)}
-            className="w-full sm:w-auto px-6 py-2.5 bg-brand-blue text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-brand-blue/20 hover:bg-brand-blue-dark active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+            className="w-full xl:w-auto px-6 py-2.5 bg-brand-blue text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-brand-blue/20 hover:bg-brand-blue-dark active:scale-[0.98] transition-all flex items-center justify-center gap-2 shrink-0"
           >
             <UserPlus size={18} />
             <span>Registrar Nuevo</span>
@@ -56,16 +91,21 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
       </div>
 
       <div className="glass-card overflow-hidden">
-        <div className="p-4 border-b border-slate-100 bg-slate-50/50">
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input 
-              type="text" 
-              placeholder="Buscar por nombre o carnet..."
-              className="input-field pl-10 h-10 text-sm"
+        <div className="p-4 border-b border-slate-100 bg-white">
+          <div className="flex items-center w-full max-w-md bg-slate-100/80 border border-slate-300 shadow-inner hover:border-slate-400 rounded-xl px-3 py-2.5 focus-within:ring-2 focus-within:ring-brand-blue/30 focus-within:border-brand-blue focus-within:bg-white transition-all min-h-[46px]">
+            <Search size={16} className="text-slate-500 mr-2 shrink-0" />
+            <input
+              type="text"
+              placeholder="Buscar por nombre, C.I o P00..."
               value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="bg-transparent border-none outline-none w-full text-sm font-bold text-slate-800 placeholder:text-slate-500 min-w-0"
             />
+            {searchTerm && (
+              <button onClick={() => setSearchTerm('')} className="text-slate-500 hover:text-slate-800 transition-colors ml-1 shrink-0 p-1 bg-slate-200 hover:bg-slate-300 rounded-full">
+                <X size={14} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -73,11 +113,11 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-100/80 text-[11px] font-bold text-slate-500 uppercase tracking-widest border-b-2 border-slate-200">
+              <tr className="bg-slate-100/90 text-[11px] font-extrabold text-slate-900 uppercase tracking-widest border-b-2 border-slate-300">
                 <th className="px-6 py-4">Usuario / Técnico</th>
                 <th className="px-6 py-4">Rol Sistema</th>
                 <th className="px-6 py-4">P00</th>
-                <th className="px-6 py-4">C.I</th>
+                <th className="px-6 py-4 whitespace-nowrap">C.I</th>
                 <th className="px-6 py-4">Estado</th>
                 <th className="px-6 py-4 text-right">Acciones</th>
               </tr>
@@ -105,7 +145,17 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
                         </div>
                         <div>
                           <p className="font-bold text-slate-900 leading-none">{tech.name}</p>
-                          <p className="text-[10px] text-slate-500 font-mono mt-1">{tech.email}</p>
+                          <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-slate-500 mt-1.5 font-medium items-center">
+                            <span className="font-mono">{tech.email}</span>
+                            <span>•</span>
+                            <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-bold">{tech.specialty}</span>
+                            {tech.department && (
+                              <>
+                                <span>•</span>
+                                <span className="bg-blue-50 text-brand-blue border border-blue-100 px-1.5 py-0.5 rounded font-black uppercase tracking-wider">{tech.department}</span>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -124,8 +174,8 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
                         {tech.employeeId || 'S/N'}
                       </span>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded whitespace-nowrap inline-block">
                         {tech.idCard || 'S/N'}
                       </span>
                     </td>
@@ -138,11 +188,11 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-3">
+                      <div className="flex items-center justify-end gap-2">
                         {onEditTechnician && (
                           <button 
                             onClick={() => onEditTechnician(tech)}
-                            className="p-1.5 text-slate-400 hover:text-brand-blue transition-colors rounded-lg hover:bg-white border border-slate-100"
+                            className="p-1.5 text-slate-500 hover:text-brand-blue transition-all rounded-lg bg-white border border-slate-200 shadow-sm hover:border-brand-blue/30 hover:shadow"
                           >
                             <Edit2 size={16} />
                           </button>
@@ -150,7 +200,7 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
                         {onDeleteTechnician && (
                           <button 
                             onClick={() => onDeleteTechnician(tech.id, tech.name)}
-                            className="p-1.5 text-slate-300 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50"
+                            className="p-1.5 text-slate-500 hover:text-red-500 transition-all rounded-lg bg-white border border-slate-200 shadow-sm hover:border-red-500/30 hover:shadow hover:bg-red-50"
                           >
                             <Trash2 size={16} />
                           </button>
@@ -200,7 +250,10 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
                   <div className="flex flex-col gap-1.5">
                     <div className="flex items-center gap-2">
                       <Briefcase size={12} className="text-slate-400" />
-                      <span className="text-[11px] font-bold text-slate-600">{tech.specialty}</span>
+                      <span className="text-[11px] font-bold text-slate-600">
+                        {tech.specialty}
+                        {tech.department && <span className="text-brand-blue font-extrabold uppercase"> [{tech.department}]</span>}
+                      </span>
                     </div>
                     {tech.phoneNumber && (
                       <div className="flex items-center gap-2">

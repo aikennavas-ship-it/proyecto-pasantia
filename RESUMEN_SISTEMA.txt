@@ -1,0 +1,281 @@
+================================================================================
+          SISTEMA DE GESTIÓN DE HORAS EXTRAS, ASISTENCIA Y PLANIFICACIÓN
+                   GERENCIA DE DATOS Y TRANSMISIÓN · CANTV
+================================================================================
+
+Este documento contiene el manual descriptivo y funcional completo del sistema, de 
+extremo a extremo (Frontend, Backend, bases de datos, flujos lógicos, roles, 
+reglas técnicas y cálculos oficiales de horas de la LOTTT). Está estructurado de 
+manera detallada para documentar el proyecto e identificar capacidades actuales.
+
+--------------------------------------------------------------------------------
+1. ESPECIFICACIÓN TÉCNICA DEL BACKEND Y BASE DE DATOS (FIREBASE FIRESTORE)
+--------------------------------------------------------------------------------
+
+El sistema es una aplicación moderna "Serverless/Fullstack" conectada a Google 
+Firebase. Permite almacenamiento persistente de datos en tiempo real mediante 
+Firestore y autenticación a través de Firebase Authentication.
+
+Estructura de la Base de Datos (Colecciones principales):
+
+1. Colección 'activities':
+   - Almacena todos los incidentes, labores técnicas y actividades diarias.
+   - Campos clave:
+     * id: ID autogenerado único.
+     * title: Nombre o descripción sucinta de la labor realizada.
+     * description: Detalles amplios de la intervención técnica.
+     * incidentNumber: Formato oficial estandarizado de incidentes (ej: INC-2026-X).
+     * fleet: Vehículo asignado o flota utilizada para la labor.
+     * region: Región operativa asociada (ej: Central, Occidente, etc.).
+     * date: Tipo Timestamp. Fecha de realización de la labor.
+     * startTimeMorning / endTimeMorning: Horas del bloque de la mañana.
+     * hasPause: Indica si se tomó la pausa reglamentaria para el almuerzo ("SI" o "NO").
+     * startTimeAfternoon / endTimeAfternoon: Horas del bloque de la tarde.
+     * hasPerDiem / perDiemAmount: Indica si aplica viático y el monto asignado.
+     * participants: Arreglo de strings con los nombres completos de los técnicos participantes.
+     * technicianName: Nombre del participante primario.
+     * totalHours: Jornada de trabajo calculada en base de datos en formato decimal.
+     * overtimeHours: Horas extra (valor positivo) o déficit laboral (valor negativo).
+     * justification: Explicación obligatoria si hay sobretiempo o déficit.
+     * documentation: Estado documental de la tarea ("SI" o "NO").
+     * driver: Nombre del técnico asignado como chofer (manejo de flota).
+     * adminId: ID de Firebase Auth del usuario que registró el reporte.
+     * isDeleted / deletedAt: Bandera booleana y fecha para eliminación lógica tipo Papelera.
+
+2. Colección 'technicians':
+   - Almacena el padrón de personal técnico y de supervisión de CANTV.
+   - Campos clave:
+     * id: ID asignado.
+     * name: Nombre completo del técnico.
+     * email: Correo institucional único de acceso al sistema.
+     * employeeId: Código único P00 de CANTV.
+     * idCard: Cédula de identidad.
+     * specialty: Especialidad/Área (ej: Fibra Óptica, Microondas, Datos, etc.).
+     * department: Departamento organizacional (ej: Transmisión, Datos, Provisión).
+     * role: Rol asignado en la plataforma (admin, supervisor, tecnico).
+     * status: Estado de disponibilidad laboral (activo, inactivo, reposo, vacaciones, baja).
+     * phoneNumber: Teléfono de contacto.
+     * isDeleted: Bandera booleana para eliminación lógica.
+
+3. Colección 'notifications':
+   - Almacena todas las alertas generadas por modificaciones o eventos críticos de seguridad.
+   - Campos clave:
+     * id: ID único.
+     * type: Tipo de notificación (activity_add, activity_edit, tech_edit, tech_add, etc.).
+     * message: Texto descriptivo de la alerta (quién hizo qué y cuándo).
+     * createdAt: Timestamp preciso del evento.
+     * readBy: Arreglo de UIDs de los usuarios que ya han marcado la notificación como leída.
+
+4. Colección 'users':
+   - Perfiles de usuario de administración y acceso. Asigna permisos según jerarquía.
+
+--------------------------------------------------------------------------------
+2. SISTEMA DE AUTENTICACIÓN, REGISTRO Y GESTIÓN DE ROLES
+--------------------------------------------------------------------------------
+
+1. Modificadores de Niveles de Acceso y Jerarquía:
+   - Administrador General: Control absoluto de lectura y escritura en todas las 
+     secciones del sistema. Único perfil autorizado para dar de alta/baja a nuevo 
+     personal, realizar eliminaciones físicas/definitivas de la base de datos y 
+     restaurar registros desde la Papelera.
+   - Supervisor: Posee un nivel intermedio para auditar y generar reportes mensuales. 
+     Puede registrar actividades y editar sus propios reportes de labor. Al ingresar 
+     al sistema, se emite una alerta indicando su login.
+   - Técnico: Nivel básico de solo lectura en métricas y visualizaciones avanzadas. 
+     Está autolimitado para reportar únicamente su jornada mediante el panel de 
+     actividades.
+
+2. Creación Protegida de Personal (Doble Instancia Firebase Auth):
+   - Flujo de creación de técnicos: Al dar de alta un nuevo técnico con credenciales 
+     de acceso desde el backend administrativo, el sistema utiliza de forma segura una 
+     instancia secundaria interna de Firebase Auth. Esto permite crear el nuevo usuario 
+     en la base de datos sin cerrar ni desloguear la sesión actual de administración 
+     activa de la pantalla de trabajo.
+
+--------------------------------------------------------------------------------
+3. MÓDULO POR MÓDULO: COMPONENTES, ACCIONES Y BOTONES
+--------------------------------------------------------------------------------
+
+================================================================================
+MÓDULO A: PANEL DE CONTROL / DASHBOARD (Vista Estratégica)
+================================================================================
+Es la central visual de mandos inteligente del sistema.
+1. Filtros Temporales Dinámicos:
+   - Un selector de mes (Enero a Diciembre).
+   - Un selector de año autogenerado en tiempo real (va creando años de forma infinita 
+     desde el año base 2024 hasta el año en curso para evitar cuellos de botella estáticos).
+2. Tarjetas de Métricas Dinámicas (Stat Cards con Modales de Desglose Integrados):
+   - Tarjeta "Total Labores": Total de actividades del mes seleccionado.
+   - Tarjeta "Personal Activo": Cuenta los técnicos activos actuales.
+   - Tarjeta "Sobretiempo Acumulado": Total de horas extras generadas en el mes.
+   - Tarjeta "Déficit Acumulado": Total de horas faltantes en el mes.
+   - Tarjeta "Viáticos Estimados": Monto total estimado por viáticos del personal.
+   - Tarjeta "Límite de Fatiga": Registra alertas de técnicos que han sobrepasado 
+     el límite seguro de la normativa de fatiga (LOTTT) en la semana laboral.
+   - ACCIÓN FLOTANTE: Hacer clic en cualquiera de estos Stat Cards despliega un 
+     conejillo modal informativo en tiempo real que desglosa de manera pormenorizada 
+     los nombres de los técnicos, montos o actividades vinculadas a dicha métrica.
+3. Componentes de Visualización y Gráficos (Widgets de Datos via Recharts):
+   - Tarjeta "Distribución por Especialidades" (Gráfico de Dona): Muestra qué porcentaje 
+     de labores pertenecen a Transmisión, Datos, Planta Externa, etc.
+   - Tarjeta "Rendimiento y Mayor Participación" (Gráfico de Barras): Clasifica 
+     un top interactivo de los técnicos que han prestado más horas operativas.
+   - Alertas Rápidas de Operaciones: Notifica instantáneamente anomalías en las jornadas.
+
+================================================================================
+MÓDULO B: ACTIVIDADES / SMART SPREADSHEET (Planilla y Registro Integral)
+================================================================================
+Centraliza la hoja de diario técnica del sistema en formato de tabla interactiva.
+1. Selector de Escala Temporal Dual:
+   - Permite alternar la hoja entre dos modos:
+     * DÍA ACTIVO: Filtra y muestra la planilla del día exacto seleccionado.
+     * SEMANA LABORAL: Filtra la planilla en base a la semana completa, facilitando 
+       la auditoría rápida de flujos semanales.
+2. Controles de Fecha (Navegador Estilo Calendario):
+   - Botón "Anterior / Siguiente": Permite retroceder o avanzar un día de manera rápida.
+   - Mini Selector de Calendario Directo: Selector de (Día - Mes - Año) de carga instantánea 
+     para saltar a cualquier fecha registrada en el histórico de bases de datos.
+3. Banner Consolidado de Resumen de Horas (Sección de Alertas en Cabecera):
+   - Total Horas (Muestra la suma total de horas trabajadas en el rango activo).
+   - ST Acumulado (Total general de horas extra para control técnico).
+   - DF Acumulado (Total acumulado en déficit de horas en el rango establecido).
+   - Jornadas Mayores a 10 horas: Esfera roja de alerta que calcula cuántas personas 
+     excedieron la jornada máxima legal de 10 horas permitidas en una jornada.
+     * CLIC EN ALERTA JORNADA > 10h: Abre un modal exclusivo tipo tabla detallando el 
+       nombre de la persona, las fechas y las horas totales que trabajó para evitar 
+       demandas laborales o multas ante el ministerio.
+4. Botón "Reportar Nueva Actividad / Agregar":
+   - Abre el formulario interactivo integral de labor técnico.
+5. Botones de Exportación Integral en la Hoja de Diario:
+   - Botón "Exportar Planificación" (.xlsx): Genera un archivo Excel matricial y dinámico 
+     de estructura cruzada de personal: las filas representan los incidentes, flotas, fechas, 
+     justificaciones, viáticos, y se listan columnas específicas de firmas y marcas por 
+     técnico (`tech_ID`). La celda es marcada con una "X" nítida si el técnico participó, o se 
+     deja en blanco si no formó parte de la labor técnica de ese día.
+   - Botón "Exportar Sobretiempo" (.xlsx): Genera un Excel para control de nómina y 
+     firma administrativa, con las descripciones, horarios estandarizados en formato 
+     AM/PM amigables, viáticos de nómina y los motivos de justificación del tiempo.
+   - Ambos sistemas de exportación aplican de manera flexible el rango de consulta (Filtrado 
+     solo por Día Único o Semana Completa seleccionada).
+6. Tabla de Cuadrícula "Smart Spreadsheet":
+   - Columnas detalladas: # Referencia, Causa/Incidente, Actividad, Personal Asignado 
+     (representado mediante chips con el P00 del técnico), Región, Entrada AM, Salida AM, 
+     Pausa reglamentaria, Entrada PM, Salida PM, Horas Extras, Justicativo y estatus.
+   - Fila Fantasma ("Empty Row Skeletons"): Completa estéticamente la plantilla si faltan 
+     registros con filas vacías atenuadas, simulando una interfaz de hoja de cálculo nativa.
+   - Botones Rápidos de Operación de Filas:
+     * Botón Editar (Carga el componente en estado de edición).
+     * Botón Papelera (Envía la actividad directamente a la papelera lógica).
+
+================================================================================
+MÓDULO C: GESTIÓN DE PERSONAL / REPORTES DE TÉCNICOS
+================================================================================
+Lugar de control centralizado para la administración de la plantilla laboral.
+1. Filtros y Búsqueda de Personal:
+   - Panel de texto que busca instantáneamente de la nómina por Nombre, Especialidad o P00.
+2. Botón "Crear Nuevo Técnico" (Uso exclusivo de Administrador General):
+   - Despliega el formulario de registro de personal que solicita la Cédula, el correo de 
+     acceso, el número de celular, departamento, especialidad y su contraseña.
+3. Fichas de Identificación Técnico (Tarjetas Bento de Personal):
+   - Muestran de forma gráfica el estatus de la persona, su área operativa (Datos/Transmisión) 
+     y botones rápidos para enviar mensajes directos, editar información o darlos de baja.
+
+================================================================================
+MÓDULO D: PANEL DE REPORTES / GENERAL DE HORILLA
+================================================================================
+Es el motor dinámico de consulta y exportaciones masivas del sistema.
+1. Selector de Fechas Administrativas:
+   - Mes y año del periodo a auditar mediante reportes globales.
+2. Generadores y Botones de Descarga:
+   - Botón "Generar Reporte Nómina Excel": Genera la planilla maestra de acumulados del mes, 
+     adecuada para procesar pagos e incidencias.
+   - Botón "Descargar Informe PDF General": Genera un informe documentado detallando gráficos, 
+     horas de producción y rendimiento en PDF portátil de alta fidelidad.
+
+================================================================================
+MÓDULO E: PAPELERA DE RECICLAJE (Sistema de Recuperación Antierrores)
+================================================================================
+Evita la pérdida accidental de datos en la base de datos de CANTV.
+1. Contador de Días en Cuenta Regresiva (Auto-Purga):
+   - El sistema calcula 30 días continuos antes del borrado absoluto, mostrando una badge 
+     atractiva en naranja con los días que le quedan a cada reporte antes de depurar de Firebase.
+2. Barra de Navegación Sub-Tabuladora:
+   - Pestaña "Actividades" (Muestra las labores enviadas a la papelera).
+   - Pestaña "Personal" (Muestra los técnicos desactivados).
+3. Botones Operativos de la Papelera:
+   - Botón "Restaurar": Recupera la actividad o el técnico reincorporándolo a la base activa 
+     e inserta de forma automatizada una notificación de restauración del registro.
+   - Botón "Eliminar para Siempre" (Exclusivo Administrador): Borra físicamente el registro 
+     de manera irreversible.
+   - Botón "Vaciar Papelera": Borra todo el repositorio de borrados lógicos.
+
+================================================================================
+MÓDULO F: BARRA NAVEGACIÓN Y CONFIGURACIÓN
+================================================================================
+1. Sidebar Lateral Dinámico:
+   - Contiene los enlaces inteligentes adaptativos para cada sección (Panel, Actividades, 
+     Personal, Reportes, Papelera, Configuración).
+   - Oculta de forma inteligente las secciones administrativas de usuarios con nivel básico 
+     (técnico) para prevenir brechas de seguridad.
+2. Bloque "Configuración":
+   - Contiene la información directa del usuario firmatario del sistema, su correo, rol y 
+     el botón para "Cerrar Sesión" de forma rápida.
+
+================================================================================
+MÓDULO G: RECEPTOR Y CAMPANITA DE NOTIFICACIONES (Tiempo Real)
+================================================================================
+Garantiza la trazabilidad por auditoría de todos los movimientos de información en la plataforma.
+1. Campanita Estilo Red Social (Badge Acumuladora):
+   - Contiene un indicador flotante dinámico superior en color rojo o azul con el número total 
+     de alertas sin leer. Soporta números reales y cambia a "99+" de manera elegante si los 
+     mensajes superan el valor para evitar saturar estéticamente el panel. Se sacude levemente 
+     de forma sutil al haber nuevas alertas.
+2. Centro de Notificaciones Desplegable:
+   - Panel flotante vertical que se abre al hacer clic sobre la campana. Trae los últimos 20 
+    sucesos directamente de Firestore.
+   - Flujo Inteligente de Notificaciones de Auditoría:
+     * El sistema registra automáticamente un evento en el centro para el Administrador General 
+       cuando ocurre:
+       - Una inserción de labor técnica / Nueva labor (`activity_add`).
+       - Una edición en el Smart Spreadsheet / Cambio de parámetros (`activity_edit`).
+       - Un registro de nuevo técnico o cambio de estatus de personal (`tech_add`/`tech_edit`).
+       - Un movimiento a la papelera del sistema (`moved_to_trash`).
+       - Un borrado irreversible / Eliminación física definitiva (`deleted_permanently`).
+       - Una recuperación o restauración de un elemento de la papelera (`restore`).
+       - El ingreso o registro oficial de inicio de sesión de algún supervisor o técnico (`auth_login`/`auth_register`).
+3. Botón "Marcar todo como leído":
+   - Inserta el ID del usuario activo en el arreglo `readBy` de cada notificación en Firestore 
+     para limpiar la badge del acumulador.
+
+--------------------------------------------------------------------------------
+4. REGLAS TÉCNICAS DE COHERENCIA EN HORARIOS Y VIÁTICOS
+--------------------------------------------------------------------------------
+
+1. La Jornada Estándar y Regla Oficial CANTV Central (Maracay 4357):
+   - La jornada ordinaria consta de un estricto margen de 8 horas de trabajo.
+   - Horario de Mañana: Entrada a las 07:45 AM (07:45) y salida a las 11:45 AM (11:45).
+   - Pausa reglamentaria: Opción predeterminada "SI" (Representa 1 hora de descanso: 11:45 a 12:45).
+   - Horario de Tarde: Entrada de tarde a las 12:45 PM (12:45) y cierre estándar a las 16:00 (04:00 PM).
+
+2. Cálculo Dinámico de Tiempos y Crossover de Medianoche:
+   - El sistema analiza de manera dinámica los inputs de tiempo. Si la hora de salida AM/PM es 
+     cronológicamente menor que su correspondiente tiempo de entrada, el algoritmo interpreta que 
+     la labor cruzó la medianoche (Crossover) y le suma automáticamente 24 horas del día siguiente.
+   - Fórmula: `Diferencia Horas = (Hora Salida - Hora Entrada)`.
+   - Si pausa es "NO", el sistema calcula la brecha entre el bloque de la mañana y la tarde y 
+     la suma como tiempo de guardia activa, incrementando el total trabajado.
+
+3. Restricciones de Modificación y Justificación de Labores:
+   - El formulario calcula en tiempo real si existe sobretiempo (Si Total > 8h) o un déficit 
+     laboral (Si Total < 8h).
+   - Obligatoriedad: Si hay sobretiempo o déficit calculado, **es estrictamente obligatorio** escribir 
+     un texto de justificación para poder guardar el reporte técnico.
+   - Coherencia: Si la jornada es perfectamente estándar (8 horas netas sin variaciones), el campo 
+     de justificación se bloquea de forma segura forzando el valor autoexplicativo: *"Jornada estándar 
+     sin sobretiempo ni déficit."*. Así se evita ruido de datos e inconsistencia administrativa.
+
+4. Lógica de Viáticos de Alimentación:
+   - Si se activa el selector "Viáticos" (hasPerDiem = true), el sistema fuerza al supervisor a 
+     colocar el monto estimado de viáticos. Si el switch está apagado, el monto de reembolso se 
+     resetea de manera transparente a 0.
+================================================================================

@@ -26,6 +26,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
     employeeId: initialData?.employeeId || '',
     idCard: initialData?.idCard || 'V-',
     specialty: initialData?.specialty || '',
+    department: (initialData?.department || '').toUpperCase(),
     phoneNumber: initialData?.phoneNumber || '',
     status: isCustomStatus ? 'otro' : initialStatusVal,
     customStatus: isCustomStatus ? (initialData?.status || '') : '',
@@ -44,10 +45,9 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
 
     // Check missing fields
     const isNew = !initialData;
-    const isTecho = data.systemRole === 'tecnico';
     
-    if (!data.firstName || !data.lastName || !data.employeeId || !data.idCard || !data.specialty || !data.phoneNumber || !finalStatus || !data.email || (isNew && !isTecho && !data.password)) {
-      setErrorPrompt('Por favor, rellene todos los campos requeridos del formulario.');
+    if (!data.firstName || !data.lastName || !data.employeeId || !data.idCard || !data.specialty || !data.department || !data.phoneNumber || !finalStatus || !data.email || (isNew && !data.password)) {
+      setErrorPrompt('Por favor, rellene todos los campos requeridos del formulario (incluyendo el departamento).');
       return;
     }
 
@@ -78,18 +78,19 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
       return;
     }
     
-    // Validation: Password for Supervisors/Admins
-    if (isNew && !isTecho) {
-      if (data.password.length < 10 || data.password.length > 64) {
-        setErrorPrompt('La contraseña debe tener entre 10 y 64 caracteres.');
+    // Validation: Password strength
+    if (isNew || (!isNew && data.password)) {
+      const pwdVal = data.password;
+      if (pwdVal.length < 10 || pwdVal.length > 64) {
+        setErrorPrompt(isNew ? 'La contraseña debe tener entre 10 y 64 caracteres.' : 'La nueva contraseña debe tener entre 10 y 64 caracteres.');
         return;
       }
-      const hasUpper = /[A-Z]/.test(data.password);
-      const hasLower = /[a-z]/.test(data.password);
-      const hasNumber = /[0-9]/.test(data.password);
-      const hasSpecial = /[!@#\$%\^&\*\(\)_\+\-\=\[\]\{\};':"\\|,.<>\/\?¡¿]/.test(data.password);
+      const hasUpper = /[A-Z]/.test(pwdVal);
+      const hasLower = /[a-z]/.test(pwdVal);
+      const hasNumber = /[0-9]/.test(pwdVal);
+      const hasSpecial = /[!@#\$%\^&\*\(\)_\+\-\=\[\]\{\};':"\\|,.<>\/\?¡¿]/.test(pwdVal);
       if (!hasUpper || !hasLower || !hasNumber || !hasSpecial) {
-        setErrorPrompt('La contraseña debe contener mayúsculas, minúsculas, números y caracteres especiales.');
+        setErrorPrompt(isNew ? 'La contraseña debe contener mayúsculas, minúsculas, números y caracteres especiales.' : 'La nueva contraseña debe contener mayúsculas, minúsculas, números y caracteres especiales.');
         return;
       }
     }
@@ -111,6 +112,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
       employeeId: data.employeeId,
       idCard: data.idCard,
       specialty: data.specialty,
+      department: data.department.trim(),
       phoneNumber: data.phoneNumber,
       status: finalStatus,
       email: data.email.toLowerCase().trim(),
@@ -140,7 +142,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
           )}
           
           <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Correo Institucional</label>
+            <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Correo Institucional</label>
             <input
               required
               type="email"
@@ -151,24 +153,28 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
             />
           </div>
 
-          {!initialData && data.systemRole !== 'tecnico' && (
-            <div className="space-y-1 animate-in slide-in-from-top-2">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Contraseña de Acceso</label>
-              <input
-                required
-                type="password"
-                className="input-field"
-                placeholder="Mínimo 10 caracteres"
-                maxLength={64}
-                value={data.password}
-                onChange={e => setData({ ...data, password: e.target.value })}
-              />
-              <p className="text-[9px] text-slate-400 font-medium ml-1">Debe incluir mayúsculas, minúsculas, números y caracteres especiales (ej: @, #, $, *).</p>
-            </div>
-          )}
+          <div className="space-y-1 animate-in slide-in-from-top-2">
+            <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">
+              {initialData ? 'Nueva Contraseña de Acceso (Opcional)' : 'Contraseña de Acceso'}
+            </label>
+            <input
+              required={!initialData}
+              type="password"
+              className="input-field"
+              placeholder={initialData ? 'Dejar en blanco para conservar la actual' : 'Mínimo 10 caracteres'}
+              maxLength={64}
+              value={data.password}
+              onChange={e => setData({ ...data, password: e.target.value })}
+            />
+            <p className="text-[9px] text-slate-500 font-bold ml-1">
+              {initialData 
+                ? 'Escriba una nueva contraseña para actualizar el acceso del usuario. Debe contener mayúsculas, minúsculas, números y caracteres especiales (ej: @, #, $, *).'
+                : 'Debe incluir mayúsculas, minúsculas, números y caracteres especiales (ej: @, #, $, *).'}
+            </p>
+          </div>
 
           <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Rol en el Sistema</label>
+            <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Rol en el Sistema</label>
             <select
               required
               className="input-field"
@@ -183,7 +189,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Nombres</label>
+              <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Nombres</label>
               <input
                 required
                 className="input-field"
@@ -193,7 +199,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Apellidos</label>
+              <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Apellidos</label>
               <input
                 required
                 className="input-field"
@@ -205,7 +211,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
           </div>
 
           <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">P00 / Carnet (Empleado)</label>
+            <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">P00 / Carnet (Empleado)</label>
             <input
               required
               maxLength={6}
@@ -217,7 +223,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
           </div>
 
           <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Cédula de Identidad (C.I)</label>
+            <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Cédula de Identidad (C.I)</label>
             <input
               required
               maxLength={10}
@@ -236,7 +242,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
           </div>
           
           <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Número de Teléfono</label>
+            <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Número de Teléfono</label>
             <input
               required
               type="tel"
@@ -256,7 +262,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
           </div>
 
           <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Especialidad / Cargo</label>
+            <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Especialidad / Cargo</label>
             <input
               required
               type="text"
@@ -268,7 +274,19 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
           </div>
 
           <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Estado Administrativo</label>
+            <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Departamento</label>
+            <input
+              required
+              type="text"
+              className="input-field uppercase"
+              placeholder="Ej: DATOS, TRANSMISION, SOPORTE, etc."
+              value={data.department}
+              onChange={e => setData({ ...data, department: e.target.value.toUpperCase() })}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Estado Administrativo</label>
             <select
               required
               className="input-field"
@@ -286,7 +304,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
           
           {data.status === 'otro' && (
             <div className="space-y-1 animate-in slide-in-from-top-2">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Especificar Estado</label>
+              <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Especificar Estado</label>
               <input
                 required
                 type="text"

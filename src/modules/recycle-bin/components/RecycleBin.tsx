@@ -1,5 +1,5 @@
 import React from 'react';
-import { Trash2, RotateCcw, AlertCircle, Clock, Search, Filter, Calendar } from 'lucide-react';
+import { Trash2, RotateCcw, AlertCircle, Clock, Search, Filter, Calendar, X } from 'lucide-react';
 import { Activity, Technician } from '../../../types';
 import { cn } from '../../../lib/utils';
 import { format, differenceInDays } from 'date-fns';
@@ -47,25 +47,36 @@ export default function RecycleBin({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Papelera de Reciclaje</h2>
-          <p className="text-sm text-slate-500 font-medium tracking-tight">Recupera elementos borrados en los últimos 30 días</p>
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 bg-white p-6 rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02),0_15px_35px_rgba(0,0,0,0.06)] border border-slate-200 animate-in fade-in">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full xl:w-auto">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-brand-blue to-blue-600 rounded-3xl flex items-center justify-center text-white shadow-lg shadow-brand-blue/15 shrink-0">
+            <Trash2 size={26} className="sm:size-7" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-lg sm:text-xl font-display font-black text-slate-900 tracking-tight uppercase truncate">Papelera de Reciclaje</h2>
+            <div className="flex flex-wrap items-center gap-2 mt-0.5">
+              <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Elementos borrados hace menos de 30 días</p>
+              <div className="hidden sm:block w-1.5 h-1.5 rounded-full bg-slate-300" />
+              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-1">
+                Central Maracay 4357
+              </p>
+            </div>
+          </div>
         </div>
         
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto justify-start xl:justify-end">
           {totalItems > 0 && (
             <div className="flex items-center gap-2">
               <button 
                 onClick={onRestoreAll}
-                className="btn-primary py-2 px-4 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-brand-blue/20"
+                className="btn-primary py-2 px-4 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-brand-blue/20 shrink-0"
               >
                 <RotateCcw size={14} />
                 Restaurar Todo
               </button>
               <button 
                 onClick={onEmptyBin}
-                className="bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 border border-red-100 transition-all"
+                className="bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 border border-red-100 transition-all shrink-0"
                 title="Elimina permanentemente todos los elementos de la papelera"
               >
                 <Trash2 size={14} />
@@ -98,19 +109,24 @@ export default function RecycleBin({
       </div>
 
       <div className="glass-card overflow-hidden min-h-[500px] flex flex-col p-0">
-        <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row gap-4 items-center">
-          <div className="relative flex-1 w-full mx-auto max-w-2xl px-2">
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+        <div className="p-4 border-b border-slate-100 bg-white flex flex-col sm:flex-row gap-4 items-center">
+          <div className="flex items-center flex-1 w-full max-w-2xl mx-auto bg-slate-100/80 border border-slate-300 shadow-inner hover:border-slate-400 rounded-xl px-3 py-2.5 focus-within:ring-2 focus-within:ring-brand-blue/30 focus-within:border-brand-blue focus-within:bg-white transition-all min-h-[46px]">
+            <Search size={16} className="text-slate-500 mr-2 shrink-0" />
             <input 
               type="text" 
               placeholder={`Buscar en la papelera...`}
-              className="input-field pl-12 h-12 text-sm bg-white border-slate-200"
+              className="bg-transparent border-none outline-none w-full text-sm font-bold text-slate-800 placeholder:text-slate-500 min-w-0"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
             />
+            {searchTerm && (
+              <button onClick={() => setSearchTerm('')} className="text-slate-500 hover:text-slate-800 transition-colors ml-1 shrink-0 p-1 bg-slate-200 hover:bg-slate-300 rounded-full">
+                <X size={14} />
+              </button>
+            )}
           </div>
-          <div className="flex items-center gap-2 text-[10px] font-bold text-amber-600 bg-amber-50 px-4 py-2 rounded-xl border border-amber-100">
-            <Clock size={14} />
+          <div className="flex items-center justify-center gap-2 text-[8px] sm:text-[10px] font-bold text-amber-600 bg-amber-50 px-3 sm:px-4 py-2 rounded-xl border border-amber-100 shrink-0 w-full sm:w-auto text-center sm:text-left whitespace-normal sm:whitespace-nowrap">
+            <Clock size={14} className="shrink-0" />
             <span>LIMPIEZA AUTOMÁTICA EN 30 DÍAS</span>
           </div>
         </div>

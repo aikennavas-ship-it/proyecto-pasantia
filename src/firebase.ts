@@ -1,11 +1,23 @@
 // This is a placeholder file. It will be updated after Firebase setup is complete.
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, enableIndexedDbPersistence, initializeFirestore } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 export const app = initializeApp(firebaseConfig);
 export { firebaseConfig };
-// Use the firestoreDatabaseId from the config
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+// Use the firestoreDatabaseId from the config with long polling forced for iframe compatibility
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+}, firebaseConfig.firestoreDatabaseId);
+
+// Enable offline persistence
+// enableIndexedDbPersistence(db).catch((err) => {
+//   if (err.code == 'failed-precondition') {
+//     console.warn('Firebase persistence disabled: multiple tabs open');
+//   } else if (err.code == 'unimplemented') {
+//     console.warn('Firebase persistence not supported by current browser');
+//   }
+// });
+
 export const auth = getAuth(app);

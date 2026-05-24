@@ -45,6 +45,8 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
     justification: initialData?.justification || '',
     documentation: initialData?.documentation || 'NO', // 'SI' o 'NO'
     driver: initialData?.driver || '',
+    code: initialData?.code || 'HORA',
+    cause: initialData?.cause || '',
     date: (function() {
       if (!initialData?.date) return initialDate || new Date();
       if (typeof initialData.date.toDate === 'function') return initialData.date.toDate();
@@ -224,7 +226,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
     try {
       await onSubmit({
         ...formData,
-        justification: hasExtraTime ? formData.justification : 'No aplica. Jornada estándar sin sobretiempo ni déficit.',
+        justification: hasExtraTime ? formData.justification : 'Jornada estándar sin sobretiempo ni déficit.',
         perDiemAmount: formData.perDiemAmount ? Number(formData.perDiemAmount) : 0,
         overtimeHours,
         totalHours: Number(totalWorkedHours.toFixed(4)),
@@ -262,7 +264,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="space-y-1 md:col-span-2">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Título de la Actividad</label>
+              <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Título de la Actividad</label>
               <input
                 required
                 type="text"
@@ -273,7 +275,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Nro de Incidente</label>
+              <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Nro de Incidente</label>
               <input
                 required
                 type="text"
@@ -284,7 +286,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Flota (Vehículo)</label>
+              <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Flota (Vehículo)</label>
               <input
                 required
                 type="text"
@@ -295,7 +297,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Región</label>
+              <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Región</label>
               <input
                 required
                 type="text"
@@ -306,7 +308,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Fecha de Ejecución</label>
+              <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Fecha de Ejecución</label>
               <input
                 required
                 type="date"
@@ -330,7 +332,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Documentación</label>
+              <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Documentación</label>
               <select 
                 className="input-field" 
                 value={formData.documentation} 
@@ -341,7 +343,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Manejo (Chofer)</label>
+              <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Manejo (Chofer)</label>
               <input
                 type="text"
                 className="input-field"
@@ -350,14 +352,26 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
                 onChange={e => setFormData({ ...formData, driver: e.target.value })}
               />
             </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Código</label>
+              <select 
+                className="input-field" 
+                value={formData.code} 
+                onChange={e => setFormData({ ...formData, code: e.target.value as any })}
+              >
+                <option value="HORA">HORA</option>
+                <option value="PRIM">PRIM</option>
+                <option value="PREM">PREM</option>
+              </select>
+            </div>
           </div>
 
           <div className="space-y-1">
             <div className="flex justify-between items-center">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Descripción de las Labores</label>
+              <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Descripción de las Labores</label>
               <span className={cn(
                 "text-[10px] font-bold",
-                formData.description.length > 1400 ? "text-red-500" : "text-slate-400"
+                formData.description.length > 1400 ? "text-red-500" : "text-slate-500"
               )}>
                 {formData.description.length} / 1500
               </span>
@@ -373,17 +387,60 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
             />
           </div>
 
+          <div className="space-y-1.5">
+            <div className="flex justify-between items-center">
+              <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Causa</label>
+              <span className={cn(
+                "text-[10px] font-bold",
+                formData.cause.length > 900 ? "text-red-500" : "text-slate-500"
+              )}>
+                {formData.cause.length} / 1000
+              </span>
+            </div>
+            <textarea
+              required
+              rows={2}
+              maxLength={1000}
+              className="input-field resize-none h-20"
+              placeholder="Escriba la causa (ej: solo horas productivas, horas productivas con manejo, solo manejo)..."
+              value={formData.cause}
+              onChange={e => setFormData({ ...formData, cause: e.target.value })}
+            />
+            <div className="flex flex-wrap gap-2 pt-1 ml-1 items-center">
+              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Rellenar plantilla:</span>
+              {[
+                'solo horas productivas',
+                'horas productivas con manejo',
+                'solo manejo'
+              ].map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => setFormData({ ...formData, cause: suggestion })}
+                  className={cn(
+                    "px-3 py-1 text-[10px] font-bold rounded-lg border transition-all uppercase tracking-wide",
+                    formData.cause === suggestion
+                      ? "bg-slate-800 text-white border-slate-800"
+                      : "bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-400"
+                  )}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-1">
             <div className="flex justify-between items-center">
               <label className={cn(
-                "text-[11px] font-bold uppercase tracking-wider ml-1",
-                hasExtraTime ? "text-brand-blue" : "text-slate-400"
+                "text-[11px] font-extrabold uppercase tracking-wider ml-1",
+                hasExtraTime ? "text-brand-blue" : "text-slate-700"
               )}>
                 Justificación {hasExtraTime && (currentOT > 0 ? '(Sobretiempo)' : '(Déficit)')}
               </label>
               <span className={cn(
                 "text-[10px] font-bold",
-                formData.justification.length > 1400 ? "text-red-500" : "text-slate-400"
+                formData.justification.length > 1400 ? "text-red-500" : "text-slate-500"
               )}>
                 {formData.justification.length} / 1500
               </span>
@@ -405,44 +462,44 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
 
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">Entrada Mañana</label>
+              <label className="text-[10px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Entrada Mañana</label>
               <input required type="time" className="input-field text-sm" value={formData.startTimeMorning} onChange={e => setFormData({ ...formData, startTimeMorning: e.target.value })} />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">Salida Mañana</label>
+              <label className="text-[10px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Salida Mañana</label>
               <input required type="time" className="input-field text-sm" value={formData.endTimeMorning} onChange={e => setFormData({ ...formData, endTimeMorning: e.target.value })} />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">Pausa</label>
+              <label className="text-[10px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Pausa</label>
               <select className="input-field text-sm" value={formData.hasPause} onChange={e => setFormData({ ...formData, hasPause: e.target.value })}>
                 <option value="SI">SI</option>
                 <option value="NO">NO</option>
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">Entrada Tarde</label>
+              <label className="text-[10px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Entrada Tarde</label>
               <input required type="time" className="input-field text-sm" value={formData.startTimeAfternoon} onChange={e => setFormData({ ...formData, startTimeAfternoon: e.target.value })} />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">Salida Tarde</label>
+              <label className="text-[10px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Salida Tarde</label>
               <input required type="time" className="input-field text-sm" value={formData.endTimeAfternoon} onChange={e => setFormData({ ...formData, endTimeAfternoon: e.target.value })} />
             </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="p-5 border border-slate-100 rounded-3xl bg-slate-50/50 space-y-4 md:col-span-1">
+            <div className="p-5 border border-slate-200 rounded-3xl bg-slate-50/50 space-y-4 md:col-span-1">
               <div className="flex items-center justify-between">
-                <label className="text-[11px] font-extrabold text-slate-600 uppercase tracking-widest">Viáticos</label>
+                <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-widest">Viáticos</label>
                 <input 
                   type="checkbox" 
-                  className="w-5 h-5 rounded-lg text-brand-blue border-slate-200 focus:ring-brand-blue/20"
+                  className="w-5 h-5 rounded-lg text-brand-blue border-slate-300 focus:ring-brand-blue/20"
                   checked={formData.hasPerDiem}
                   onChange={e => setFormData({ ...formData, hasPerDiem: e.target.checked })}
                 />
               </div>
               {formData.hasPerDiem && (
                 <div className="space-y-1 animate-in slide-in-from-top-2 duration-200">
-                  <label className="text-[10px] font-bold text-slate-400 italic">Monto Estimado (Bs.)</label>
+                  <label className="text-[10px] font-black text-slate-705 text-slate-700 italic">Monto Estimado (Bs.)</label>
                   <input
                     required
                     type="number"
@@ -459,7 +516,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
             </div>
 
             <div className="md:col-span-2 space-y-2">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Técnicos Participantes</label>
+              <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Técnicos Participantes</label>
               <div className="p-4 border border-slate-200 rounded-2xl bg-white max-h-40 overflow-y-auto custom-scrollbar grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {technicians.length === 0 ? (
                   <p className="text-xs text-slate-400 italic py-2 col-span-full">No hay técnicos registrados. Regístralos en la sección 'Personal'.</p>

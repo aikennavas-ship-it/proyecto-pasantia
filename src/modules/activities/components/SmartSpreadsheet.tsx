@@ -11,15 +11,53 @@
  * - Genera cálculos en vivo de (S.T) Sobretiempos y (D.F) Descanso Fuera
  * - Gestiona la exportación directa a Excel y opciones de ordenación de filas.
  */
-import React from 'react';
-import { Download, Table, Calendar, ChevronLeft, ChevronRight, FileText, Plus, Database, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Search, AlertOctagon, X, Clock, Zap, TrendingDown } from 'lucide-react';
+import React, { useState } from 'react';
+import { Download, Table, Calendar, ChevronLeft, ChevronRight, ChevronDown, FileText, Plus, Database, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Search, AlertOctagon, X, Clock, Zap, TrendingDown } from 'lucide-react';
 import { Activity, Technician } from '../../../types';
 import { cn } from '../../../lib/utils';
-import { format, startOfDay, endOfDay, isSameDay, addDays, subDays, startOfWeek, endOfWeek } from 'date-fns';
+import { format, startOfDay, endOfDay, isSameDay, addDays, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { formatHours } from './ActivityForm';
+
+const ExpandableText = ({ 
+  text, 
+  className = "", 
+  containerClassName = "",
+  buttonClassName = "",
+  maxLength = 80 
+}: { 
+  text: string; 
+  className?: string; 
+  containerClassName?: string;
+  buttonClassName?: string;
+  maxLength?: number;
+}) => {
+  const [expanded, setExpanded] = useState(false);
+  
+  if (!text || text === '---' || text === 'S/N' || text === 'No justificado.') {
+    return <div className={cn("inline-block", containerClassName)}><span className={className}>{text}</span></div>;
+  }
+
+  const isLong = text.length > maxLength;
+
+  return (
+    <div className={cn("inline-block", containerClassName)}>
+      <span className={className}>
+        {!expanded && isLong ? `${text.substring(0, maxLength)}... ` : `${text} `}
+      </span>
+      {isLong && (
+        <button 
+          onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+          className={cn("text-[9px] text-brand-blue font-bold hover:underline inline-block active:scale-95 transition-transform whitespace-nowrap", buttonClassName)}
+        >
+          {expanded ? 'Ver menos' : 'Ver más...'}
+        </button>
+      )}
+    </div>
+  );
+};
 
 const formatTimeAMPM = (time24: string) => {
   if (!time24 || time24 === '--:--') return '--:--';
@@ -43,8 +81,8 @@ interface SmartSpreadsheetProps {
 }
 
 export default function SmartSpreadsheet({ activities, technicians, onAddActivity, selectedDate, onDateChange, onEdit, onDelete, highlightedId }: SmartSpreadsheetProps) {
-  const [sortConfig, setSortConfig] = React.useState<{ key: keyof Activity | 'participantsCount' | 'perDiem'; direction: 'asc' | 'desc' } | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
+  const [selectedTechnician, setSelectedTechnician] = React.useState<string>('todos');
   const [summaryDetails, setSummaryDetails] = React.useState<'total' | 'st' | 'df' | 'exceso' | null>(null);
   const [weeklySummaryDetails, setWeeklySummaryDetails] = React.useState<'total' | 'st' | 'df' | 'exceso' | null>(null);
 
@@ -75,8 +113,12 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
       (a.incidentNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (a.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (a.technicianName || '').toLowerCase().includes(searchTerm.toLowerCase());
+      
+    const matchesTechnician = selectedTechnician === 'todos' || 
+      (a.technicianName || '') === selectedTechnician || 
+      (a.participants || []).includes(selectedTechnician);
     
-    return isToday && matchesSearch;
+    return isToday && matchesSearch && matchesTechnician;
   });
 
   const weeklyActivities = React.useMemo(() => {
@@ -91,75 +133,50 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
       } catch {
         activityDate = new Date();
       }
-      return activityDate >= weekStart && activityDate <= weekEnd;
+      const isWithinWeek = activityDate >= weekStart && activityDate <= weekEnd;
+      
+      const matchesTechnician = selectedTechnician === 'todos' || 
+        (a.technicianName || '') === selectedTechnician || 
+        (a.participants || []).includes(selectedTechnician);
+        
+      return isWithinWeek && matchesTechnician;
     });
-  }, [activities, selectedDate]);
+  }, [activities, selectedDate, selectedTechnician]);
 
-  const sortedActivities = React.useMemo(() => {
-    if (!sortConfig) return filteredActivities;
-
-    return [...filteredActivities].sort((a, b) => {
-      let aValue: any = a[sortConfig.key as keyof Activity];
-      let bValue: any = b[sortConfig.key as keyof Activity];
-
-      if (sortConfig.key === 'participantsCount') {
-        aValue = a.participants?.length || 0;
-        bValue = b.participants?.length || 0;
-      } else if (sortConfig.key === 'perDiem') {
-        aValue = a.perDiemAmount || 0;
-        bValue = b.perDiemAmount || 0;
-      }
-
-      if (aValue === undefined || aValue === null) aValue = '';
-      if (bValue === undefined || bValue === null) bValue = '';
-
-      if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
-      if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [filteredActivities, sortConfig]);
+  const sortedActivities = filteredActivities;
 
   const excesoPersonas = React.useMemo(() => {
-    const stPorPersona: Record<string, number> = {};
+    const horasPorPersona: Record<string, number> = {};
     sortedActivities.forEach(a => {
       const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
       parts.forEach(p => {
-        if (a.overtimeHours && a.overtimeHours > 0) {
-          stPorPersona[p] = (stPorPersona[p] || 0) + a.overtimeHours;
-        }
+        horasPorPersona[p] = (horasPorPersona[p] || 0) + (a.totalHours || 0);
       });
     });
-    // Total hours > 10 means Overtime > 2
-    return Object.values(stPorPersona).filter(st => st > 2).length;
+    return Object.values(horasPorPersona).filter(h => h > 10).length;
   }, [sortedActivities]);
 
   const excesoPersonasSemanal = React.useMemo(() => {
-    let count = 0;
+    const hoursPerPersonPerDay: Record<string, number> = {};
     weeklyActivities.forEach(a => {
-      const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
-      if (a.overtimeHours && a.overtimeHours > 2) {
-        count += parts.length;
+      let dateKey = '';
+      if (a.date && typeof a.date.toDate === 'function') {
+        dateKey = a.date.toDate().toISOString().split('T')[0];
+      } else if (a.date) {
+        dateKey = new Date(a.date as any).toISOString().split('T')[0];
       }
+      const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
+      parts.forEach(p => {
+        const key = `${dateKey}_${p}`;
+        hoursPerPersonPerDay[key] = (hoursPerPersonPerDay[key] || 0) + (a.totalHours || 0);
+      });
     });
-    return count;
+    return Object.values(hoursPerPersonPerDay).filter(h => h > 10).length;
   }, [weeklyActivities]);
 
-  const handleSort = (key: any) => {
-    let direction: 'asc' | 'desc' = 'asc';
-    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    }
-    setSortConfig({ key, direction });
-  };
 
-  const SortIcon = ({ columnKey }: { columnKey: any }) => {
-    if (!sortConfig || sortConfig.key !== columnKey) return <ArrowUpDown size={14} strokeWidth={2.5} className="text-slate-400 group-hover:text-brand-blue transition-colors" />;
-    return sortConfig.direction === 'asc' 
-      ? <ArrowUp size={14} strokeWidth={3} className="text-brand-blue" /> 
-      : <ArrowDown size={14} strokeWidth={3} className="text-brand-blue" />;
-  };
 
-  const exportSobretiempoToExcel = async (activitiesList = sortedActivities, isWeekly = false) => {
+  const exportSobretiempoToExcel = async (activitiesList = sortedActivities, period: 'daily' | 'weekly' | 'monthly' = 'daily') => {
     if (!activitiesList || activitiesList.length === 0) {
       console.warn("No hay actividades registradas.");
       return;
@@ -167,7 +184,14 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
 
     try {
       const workbook = new ExcelJS.Workbook();
-      const sheetName = isWeekly ? `Semana_${format(startOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}` : format(selectedDate, 'dd-MM-yyyy');
+      let sheetName = '';
+      if (period === 'monthly') {
+        sheetName = `Mes_${format(selectedDate, 'MM-yyyy')}`;
+      } else if (period === 'weekly') {
+        sheetName = `Semana_${format(startOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}`;
+      } else {
+        sheetName = format(selectedDate, 'dd-MM-yyyy');
+      }
       const sheet = workbook.addWorksheet(sheetName.substring(0, 31));
 
       sheet.columns = [
@@ -179,11 +203,11 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
         { header: 'Fecha', key: 'fecha', width: 12 },
         { header: 'Codigo', key: 'codigo', width: 10 },
         { header: 'Causa', key: 'causa', width: 25 },
-        { header: 'Hora Entrada Mañana', key: 'he_m', width: 18 },
-        { header: 'Hora Salida Mañana', key: 'hs_m', width: 18 },
+        { header: 'Hora Entrada Mañana', key: 'he_m', width: 22 },
+        { header: 'Hora Salida Mañana', key: 'hs_m', width: 22 },
         { header: 'Pausa', key: 'pausa', width: 8 },
-        { header: 'Hora Entrada Tarde', key: 'he_t', width: 18 },
-        { header: 'Hora Salida Tarde', key: 'hs_t', width: 18 },
+        { header: 'Hora Entrada Tarde', key: 'he_t', width: 22 },
+        { header: 'Hora Salida Tarde', key: 'hs_t', width: 22 },
         { header: 'HORAS', key: 'horas', width: 10 },
         { header: 'JUSTIFIQUE', key: 'justifique', width: 45 }
       ];
@@ -193,7 +217,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
 
       headerRow.eachCell((cell, colNumber) => {
         cell.font = { bold: true, color: { argb: colNumber === 1 || colNumber === 15 ? 'FF000000' : 'FFFFFFFF' }, size: 9, name: 'Arial' };
-        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
         
         let fgColor = 'FF4F81BD'; // Blue 
         
@@ -203,8 +227,8 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
 
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fgColor } };
         cell.border = {
-          top: { style: 'thin' }, left: { style: 'thin' },
-          bottom: { style: 'thin' }, right: { style: 'thin' }
+          top: { style: 'thin', color: { argb: 'FF000000' } }, left: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'thin', color: { argb: 'FF000000' } }, right: { style: 'thin', color: { argb: 'FF000000' } }
         };
       });
 
@@ -232,27 +256,28 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
           } catch(e) {}
 
           const row = sheet.addRow({
-            area: techMatch ? (techMatch.specialty || 'DATOS').toUpperCase() : 'DATOS',
+            area: techMatch ? (techMatch.department || techMatch.specialty || 'DATOS').toUpperCase() : 'DATOS',
             p00: techMatch && techMatch.employeeId ? techMatch.employeeId : '',
             name: (p || '').toUpperCase(),
             cedula: techMatch && (techMatch as any).idCard ? (techMatch as any).idCard : 'S/N',
             region: region,
             fecha: fechaValue,
-            codigo: 'PRIM',
-            causa: 'Horas Product. Con Manejo', 
+            codigo: a.code || 'HORA',
+            causa: a.cause || '', 
             he_m, hs_m, pausa, he_t, hs_t,
-            horas: a.totalHours ? `${formatHours(a.totalHours)}h` : '',
-            justifique: a.justification || ((a.overtimeHours || 0) === 0 ? '' : 'No justificado.')
+            horas: a.totalHours ? formatHours(a.totalHours) : '',
+            justifique: a.justification || ((a.overtimeHours || 0) === 0 ? 'Jornada estándar sin sobretiempo ni déficit.' : 'No justificado.')
           });
 
           row.eachCell(cell => {
             cell.font = { size: 9, name: 'Arial' };
-            cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+            cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
+            cell.numFmt = '@'; // Force text format
             cell.border = {
-              top: { style: 'thin', color: { argb: 'FFD9D9D9' } },
-              left: { style: 'thin', color: { argb: 'FFD9D9D9' } },
-              bottom: { style: 'thin', color: { argb: 'FFD9D9D9' } },
-              right: { style: 'thin', color: { argb: 'FFD9D9D9' } }
+              top: { style: 'thin', color: { argb: 'FF000000' } },
+              left: { style: 'thin', color: { argb: 'FF000000' } },
+              bottom: { style: 'thin', color: { argb: 'FF000000' } },
+              right: { style: 'thin', color: { argb: 'FF000000' } }
             };
           });
 
@@ -270,9 +295,14 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
       const year = format(new Date(), 'yyyy');
       const dataDate = format(selectedDate, 'dd-MM-yyyy');
       
-      const fileName = isWeekly 
-        ? `Sobretiempo_CANTV_${day}_${monthName}_${year}_Semana_De_${format(startOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}_AL_${format(endOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}.xlsx`
-        : `Sobretiempo_CANTV_${day}_${monthName}_${year}_${dayName}_Generado_De_${dataDate}.xlsx`;
+      let fileName = '';
+      if (period === 'monthly') {
+        fileName = `Sobretiempo_CANTV_${day}_${monthName}_${year}_Mes_${format(selectedDate, 'MMMM_yyyy', { locale: es })}.xlsx`;
+      } else if (period === 'weekly') {
+        fileName = `Sobretiempo_CANTV_${day}_${monthName}_${year}_Semana_De_${format(startOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}_AL_${format(endOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}.xlsx`;
+      } else {
+        fileName = `Sobretiempo_CANTV_${day}_${monthName}_${year}_${dayName}_Generado_De_${dataDate}.xlsx`;
+      }
       
       saveAs(new Blob([buffer]), fileName);
     } catch (err: any) {
@@ -281,7 +311,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
     }
   };
 
-  const exportPlanificacionToExcel = async (activitiesList = sortedActivities, isWeekly = false) => {
+  const exportPlanificacionToExcel = async (activitiesList = sortedActivities, period: 'daily' | 'weekly' | 'monthly' = 'daily') => {
     if (!activitiesList || activitiesList.length === 0) {
       console.warn("No hay actividades registradas.");
       return;
@@ -289,12 +319,52 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
 
     try {
       const workbook = new ExcelJS.Workbook();
-      const sheetName = isWeekly ? `Semana_${format(startOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}` : format(selectedDate, 'dd-MM-yyyy');
+      let sheetName = '';
+      if (period === 'monthly') {
+        sheetName = `Mes_${format(selectedDate, 'MM-yyyy')}`;
+      } else if (period === 'weekly') {
+        sheetName = `Semana_${format(startOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}`;
+      } else {
+        sheetName = format(selectedDate, 'dd-MM-yyyy');
+      }
       const sheet = workbook.addWorksheet(sheetName.substring(0, 31));
 
-      const transmisionTechs = technicians.filter(t => (t.specialty || '').toLowerCase().includes('transmision') || (t.specialty || '').toLowerCase().includes('transmisión'));
-      const datosTechs = technicians.filter(t => (t.specialty || '').toLowerCase().includes('datos') || (!(t.specialty || '').toLowerCase().includes('transmision') && !(t.specialty || '').toLowerCase().includes('transmisión')));
-      const planTechs = [...transmisionTechs, ...datosTechs];
+      const getTechDept = (t: Technician) => {
+        if (t.department && t.department.trim()) return t.department.trim().toUpperCase();
+        const spec = (t.specialty || '').toLowerCase();
+        if (spec.includes('transmision') || spec.includes('transmisión')) return 'TRANSMISIÓN';
+        return 'DATOS';
+      };
+
+      const deptsMap = new Map<string, Technician[]>();
+      technicians.forEach(t => {
+        const d = getTechDept(t);
+        if (!deptsMap.has(d)) deptsMap.set(d, []);
+        deptsMap.get(d)!.push(t);
+      });
+
+      const orderedDepts = Array.from(deptsMap.keys()).sort((a, b) => {
+        if (a === 'TRANSMISIÓN' || a === 'TRANSMISION') return -1;
+        if (b === 'TRANSMISIÓN' || b === 'TRANSMISION') return 1;
+        if (a === 'DATOS') return -1;
+        if (b === 'DATOS') return 1;
+        return a.localeCompare(b);
+      });
+
+      const planTechs: Technician[] = [];
+      const deptsInfo: { name: string; startIdx: number; count: number }[] = [];
+
+      orderedDepts.forEach(deptName => {
+        const techs = deptsMap.get(deptName)!;
+        if (techs.length > 0) {
+          deptsInfo.push({
+            name: deptName,
+            startIdx: 4 + planTechs.length,
+            count: techs.length
+          });
+          planTechs.push(...techs);
+        }
+      });
 
       const cols = [
         { header: 'FECHA', key: 'fecha', width: 12 },
@@ -309,14 +379,15 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
       });
 
       cols.push(
-        { header: 'DOCUMENTACION', key: 'doc', width: 15 },
-        { header: 'SOBRETIEMPO', key: 'st', width: 15 },
+        { header: 'DOCUMENTACION', key: 'doc', width: 20 },
+        { header: 'SOBRETIEMPO', key: 'st', width: 18 },
         { header: 'DEFICIT', key: 'deficit', width: 15 },
-        { header: 'Hora Entrada Mañana', key: 'he_m', width: 18 },
-        { header: 'Hora Salida Mañana', key: 'hs_m', width: 18 },
+        { header: 'Hora Entrada Mañana', key: 'he_m', width: 22 },
+        { header: 'Hora Salida Mañana', key: 'hs_m', width: 22 },
         { header: 'Pausa', key: 'pausa', width: 10 },
-        { header: 'Hora Entrada Tarde', key: 'he_t', width: 18 },
-        { header: 'Hora Salida Tarde', key: 'hs_t', width: 18 },
+        { header: 'Hora Entrada Tarde', key: 'he_t', width: 22 },
+        { header: 'Hora Salida Tarde', key: 'hs_t', width: 22 },
+        { header: 'JUSTIFIQUE', key: 'justifique', width: 45 },
         { header: 'HORAS', key: 'horas', width: 10 },
         { header: 'MANEJO', key: 'manejo', width: 15 },
         { header: 'VIATICOS', key: 'viaticos', width: 12 },
@@ -326,29 +397,26 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
       sheet.columns = cols;
       sheet.insertRow(1, []);
 
-      if (transmisionTechs.length > 0) {
-        sheet.mergeCells(1, 4, 1, 3 + transmisionTechs.length);
-        const cell = sheet.getCell(1, 4);
-        cell.value = 'TRANSMISION';
-        cell.font = { bold: true, size: 9, name: 'Arial', color: { argb: 'FF000000' } };
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      }
-      
-      if (datosTechs.length > 0) {
-        sheet.mergeCells(1, 4 + transmisionTechs.length, 1, 3 + planTechs.length);
-        const cell = sheet.getCell(1, 4 + transmisionTechs.length);
-        cell.value = 'DATOS';
-        cell.font = { bold: true, size: 9, name: 'Arial', color: { argb: 'FF000000' } };
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      }
+      deptsInfo.forEach(info => {
+        if (info.count > 0) {
+          sheet.mergeCells(1, info.startIdx, 1, info.startIdx + info.count - 1);
+          const cell = sheet.getCell(1, info.startIdx);
+          cell.value = info.name;
+          cell.font = { bold: true, size: 9, name: 'Arial', color: { argb: 'FF000000' } };
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        }
+      });
 
       const styleHeader = (rowNum: number) => {
         const row = sheet.getRow(rowNum);
         row.eachCell((cell) => {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00B0F0' } };
           cell.font = { bold: true, size: 9, name: 'Arial', color: { argb: 'FF000000' } };
-          cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FF000000' } }, left: { style: 'thin', color: { argb: 'FF000000' } },
+            bottom: { style: 'thin', color: { argb: 'FF000000' } }, right: { style: 'thin', color: { argb: 'FF000000' } }
+          };
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
         });
       };
 
@@ -378,7 +446,8 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
           pausa: a.hasPause || 'SI',
           he_t: a.startTimeAfternoon ? formatTimeAMPM(a.startTimeAfternoon) : '12:45 PM',
           hs_t: a.endTimeAfternoon ? formatTimeAMPM(a.endTimeAfternoon) : formatTimeAMPM(a.endTime || '16:00'),
-          horas: a.totalHours ? `${formatHours(a.totalHours)}h` : '',
+          justifique: a.justification || ((a.overtimeHours || 0) === 0 ? 'Jornada estándar sin sobretiempo ni déficit.' : 'No justificado.'),
+          horas: a.totalHours ? formatHours(a.totalHours) : '',
           manejo: a.driver || '',
           viaticos: a.hasPerDiem ? 'si' : 'no',
           dpto: ''
@@ -386,15 +455,16 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
 
         const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
         planTechs.forEach(t => {
-           const isParticipant = parts.some((p: string) => (p || '').toLowerCase() === (t.name || '').toLowerCase());
+           const isParticipant = parts.some((p: string) => (p || '').toLowerCase().trim() === (t.name || '').toLowerCase().trim());
            data[`tech_${t.id}`] = isParticipant ? 'X' : '';
-        });
+         });
 
         const row = sheet.addRow(data);
 
         row.eachCell((cell, colNumber) => {
           cell.font = { size: 9, name: 'Arial' };
-          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
+          cell.numFmt = '@'; // Force text format
           cell.border = {
             top: { style: 'thin', color: { argb: 'FF000000' } },
             left: { style: 'thin', color: { argb: 'FF000000' } },
@@ -418,9 +488,14 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
       const year = format(new Date(), 'yyyy');
       const dataDate = format(selectedDate, 'dd-MM-yyyy');
       
-      const fileName = isWeekly 
-        ? `Planificacion_CANTV_${day}_${monthName}_${year}_Semana_De_${format(startOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}_AL_${format(endOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}.xlsx`
-        : `Planificacion_CANTV_${day}_${monthName}_${year}_${dayName}_Generado_De_${dataDate}.xlsx`;
+      let fileName = '';
+      if (period === 'monthly') {
+        fileName = `Planificacion_CANTV_${day}_${monthName}_${year}_Mes_${format(selectedDate, 'MMMM_yyyy', { locale: es })}.xlsx`;
+      } else if (period === 'weekly') {
+        fileName = `Planificacion_CANTV_${day}_${monthName}_${year}_Semana_De_${format(startOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}_AL_${format(endOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}.xlsx`;
+      } else {
+        fileName = `Planificacion_CANTV_${day}_${monthName}_${year}_${dayName}_Generado_De_${dataDate}.xlsx`;
+      }
       
       saveAs(new Blob([buffer]), fileName);
     } catch (err: any) {
@@ -430,30 +505,36 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
       {/* Excel Header Control */}
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 bg-white p-4 sm:p-6 rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02),0_15px_35px_rgba(0,0,0,0.06)] border border-slate-300">
-        <div className="flex items-center gap-4 w-full">
-          <div className="w-12 h-12 sm:w-14 sm:h-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 shadow-inner shrink-0">
-            <Table size={28} />
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white p-4 sm:p-5 rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.02),0_15px_35px_rgba(0,0,0,0.06)] border border-slate-200">
+        <div className="flex flex-row items-center gap-3 sm:gap-4 w-full xl:w-auto overflow-hidden">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-brand-blue to-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-brand-blue/15 shrink-0">
+            <Table size={24} className="sm:size-6" />
           </div>
-          <div className="min-w-0">
-            <h2 className="text-xl font-display font-black text-slate-900 tracking-tight truncate">Planilla Inteligente</h2>
-            <p className="text-xs text-slate-500 font-medium truncate">Formato Excel - Central 4357</p>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base sm:text-lg lg:text-xl font-display font-black text-slate-900 tracking-tight uppercase truncate">Planilla Inteligente</h2>
+            <div className="flex flex-row sm:flex-wrap items-center gap-1.5 sm:gap-2 mt-0.5 overflow-hidden">
+              <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase tracking-wider truncate">Formato Excel Estándar</p>
+              <div className="hidden sm:block w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-slate-300 shrink-0" />
+              <p className="text-[8px] sm:text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-1 shrink-0 truncate">
+                Central Maracay 4357
+              </p>
+            </div>
           </div>
         </div>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full xl:w-auto">
-          {/* Date Selector */}
-          <div className="flex items-center bg-slate-50 rounded-2xl p-1 border border-slate-300 shadow-sm relative group/date w-full sm:w-auto">
+          {/* Date Selector and Actions */}
+          <div className="flex items-center bg-slate-50 rounded-2xl p-1 border border-slate-200 shadow-sm relative group/date w-full md:w-auto shrink-0">
             <button 
               onClick={() => onDateChange(subDays(selectedDate, 1))}
-              className="w-10 h-10 flex items-center justify-center hover:bg-white hover:text-brand-blue rounded-xl transition-all hover:shadow-md border border-transparent hover:border-slate-300"
+              className="w-10 h-10 shrink-0 flex items-center justify-center hover:bg-white hover:text-brand-blue rounded-xl transition-all hover:shadow-md border border-transparent hover:border-slate-200"
             >
               <ChevronLeft size={20} />
             </button>
             
-            <div className="flex-1 flex items-center gap-1 min-w-[280px] bg-white/80 rounded-2xl border-2 border-slate-300 p-1 shadow-sm">
+            <div className="flex-1 flex justify-between items-center gap-1 min-w-0 bg-white/80 rounded-2xl border-2 border-slate-200 py-1 shadow-sm mx-1 w-full md:w-[260px]">
               {/* Day Selector */}
               <select 
                 value={format(selectedDate, 'd')}
@@ -462,14 +543,17 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                   newDate.setDate(parseInt(e.target.value));
                   onDateChange(newDate);
                 }}
-                className="flex-1 bg-transparent text-xs font-black text-slate-800 text-center py-2 hover:bg-slate-50 rounded-xl cursor-pointer focus:outline-none transition-colors appearance-none"
+                className="flex-1 bg-transparent text-xs font-black text-slate-800 text-center py-2 px-0 hover:bg-slate-50 rounded-xl cursor-pointer focus:outline-none focus:ring-0 border-0 transition-colors appearance-none"
+                style={{ backgroundImage: 'none', paddingLeft: 0, paddingRight: 0, textAlignLast: 'center' }}
               >
                 {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                  <option key={day} value={day}>{day.toString().padStart(2, '0')}</option>
+                  <option key={day} value={day} className="bg-white text-slate-800 font-sans font-bold text-left">
+                    {day.toString().padStart(2, '0')}
+                  </option>
                 ))}
               </select>
 
-              <div className="w-[1px] h-4 bg-slate-200" />
+              <div className="w-[1px] h-4 bg-slate-200 shrink-0" />
 
               {/* Month Selector */}
               <select 
@@ -479,16 +563,17 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                   newDate.setMonth(parseInt(e.target.value) - 1);
                   onDateChange(newDate);
                 }}
-                className="flex-[2] bg-transparent text-xs font-black text-slate-800 text-center py-2 hover:bg-slate-50 rounded-xl cursor-pointer focus:outline-none transition-colors appearance-none capitalize"
+                className="flex-[2] bg-transparent text-xs font-black text-slate-800 text-center py-2 px-0 hover:bg-slate-50 rounded-xl cursor-pointer focus:outline-none focus:ring-0 border-0 transition-colors appearance-none capitalize min-w-0"
+                style={{ backgroundImage: 'none', paddingLeft: 0, paddingRight: 0, textAlignLast: 'center' }}
               >
                 {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
-                  <option key={month} value={month}>
+                  <option key={month} value={month} className="bg-white text-slate-800 font-sans font-bold text-left capitalize">
                     {format(new Date(2024, month - 1, 1), 'MMMM', { locale: es })}
                   </option>
                 ))}
               </select>
 
-              <div className="w-[1px] h-4 bg-slate-200" />
+              <div className="w-[1px] h-4 bg-slate-200 shrink-0" />
 
               {/* Year Selector */}
               <select 
@@ -498,10 +583,16 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                   newDate.setFullYear(parseInt(e.target.value));
                   onDateChange(newDate);
                 }}
-                className="flex-1 bg-transparent text-xs font-black text-slate-800 text-center py-2 hover:bg-slate-50 rounded-xl cursor-pointer focus:outline-none transition-colors appearance-none"
+                className="flex-1 bg-transparent text-xs font-black text-slate-800 text-center py-2 px-0 hover:bg-slate-50 rounded-xl cursor-pointer focus:outline-none focus:ring-0 border-0 transition-colors appearance-none"
+                style={{ backgroundImage: 'none', paddingLeft: 0, paddingRight: 0, textAlignLast: 'center' }}
               >
-                {Array.from({ length: 7 }, (_, i) => 2026 - i).map(year => (
-                  <option key={year} value={year}>{year}</option>
+                {Array.from(
+                  { length: Math.max(5, new Date().getFullYear() - 2024 + 1) }, 
+                  (_, i) => new Date().getFullYear() - i
+                ).map(year => (
+                  <option key={year} value={year} className="bg-white text-slate-800 font-sans font-bold text-left">
+                    {year}
+                  </option>
                 ))}
               </select>
             </div>
@@ -510,7 +601,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
               onClick={() => onDateChange(addDays(selectedDate, 1))}
               disabled={isFuture}
               className={cn(
-                "w-10 h-10 flex items-center justify-center rounded-xl transition-all border border-transparent",
+                "w-10 h-10 shrink-0 flex items-center justify-center rounded-xl transition-all border border-transparent",
                 isFuture 
                   ? "text-slate-300 cursor-not-allowed" 
                   : "hover:bg-white hover:text-brand-blue hover:shadow-md hover:border-slate-300"
@@ -518,32 +609,64 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
             >
               <ChevronRight size={20} />
             </button>
-          </div>
 
-          <div className="flex flex-wrap sm:flex-nowrap gap-2 w-full xl:w-auto">
             {onAddActivity && (
-              <button 
-                onClick={onAddActivity}
-                className="flex-[1_1_100%] sm:flex-[0_0_auto] px-3 sm:px-6 py-2.5 bg-brand-blue text-white rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-widest shadow-lg shadow-brand-blue/20 hover:bg-brand-blue-dark active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-              >
-                <Plus size={16} className="shrink-0" />
-                <span className="truncate">Nueva Entrada</span>
-              </button>
+              <>
+                <div className="w-[1px] h-8 bg-slate-200 mx-1.5 shrink-0" />
+                <button 
+                  onClick={onAddActivity}
+                  className="shrink-0 px-4 sm:px-6 py-2.5 bg-brand-blue text-white rounded-[14px] font-black text-xs uppercase tracking-widest shadow-lg shadow-brand-blue/20 hover:bg-brand-blue-dark active:scale-[0.98] transition-all flex items-center justify-center gap-2 mr-0.5"
+                >
+                  <Plus size={16} className="shrink-0" />
+                  <span className="truncate hidden sm:block">Nueva Entrada</span>
+                  <span className="truncate sm:hidden">Nuevo</span>
+                </button>
+              </>
             )}
-            <button 
-              onClick={() => exportPlanificacionToExcel()}
-              className="flex-[1_1_100%] sm:flex-[0_0_auto] px-3 sm:px-6 py-2.5 bg-brand-blue text-white rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-widest shadow-lg shadow-brand-blue/20 hover:bg-brand-blue-dark active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-            >
-              <Table size={16} className="shrink-0" />
-              <span className="truncate">Planificación</span>
-            </button>
-            <button 
-              onClick={() => exportSobretiempoToExcel()}
-              className="flex-[1_1_100%] sm:flex-[0_0_auto] px-3 sm:px-6 py-2.5 bg-emerald-600 text-white rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-widest shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-            >
-              <Download size={16} className="shrink-0" />
-              <span className="truncate">Sobretiempo</span>
-            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Tools & Filters Bar */}
+      <div className="bg-white p-2.5 sm:p-3 rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] border border-slate-200 mb-4">
+        <div className="flex flex-row items-center gap-2 sm:gap-3 w-full">
+          {/* Search */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center w-full bg-slate-100/80 border border-slate-300 shadow-inner hover:border-slate-400 rounded-xl px-2 sm:px-3 py-2 sm:py-2.5 focus-within:ring-2 focus-within:ring-brand-blue/30 focus-within:border-brand-blue focus-within:bg-white transition-all min-h-[40px] sm:min-h-[46px]">
+              <Search size={14} className="text-slate-500 mr-1.5 sm:mr-2 shrink-0 sm:size-[16px]" />
+              <input
+                type="text"
+                placeholder="Buscar actividad o personal..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="bg-transparent border-none outline-none w-full text-[11px] sm:text-sm font-bold text-slate-800 placeholder:text-slate-500 min-w-0"
+              />
+              {searchTerm && (
+                <button onClick={() => setSearchTerm('')} className="text-slate-500 hover:text-slate-800 transition-colors ml-1 shrink-0 p-1 bg-slate-200 hover:bg-slate-300 rounded-full">
+                  <X size={12} className="sm:size-[14px]" />
+                </button>
+              )}
+            </div>
+          </div>
+          
+          {/* Filter */}
+          <div className="w-[110px] sm:w-[220px] md:w-[260px] shrink-0">
+            <div className="flex items-center bg-slate-100/80 border border-slate-300 shadow-inner hover:border-slate-400 rounded-xl px-2 py-2 sm:py-2.5 relative w-full min-h-[40px] sm:min-h-[46px] focus-within:ring-2 focus-within:ring-brand-blue/30 focus-within:border-brand-blue focus-within:bg-white transition-all">
+              <select
+                value={selectedTechnician}
+                onChange={(e) => setSelectedTechnician(e.target.value)}
+                className="w-full bg-transparent text-[10px] sm:text-xs font-black text-slate-800 cursor-pointer focus:outline-none border-0 transition-colors uppercase tracking-wider appearance-none pr-5 truncate"
+                style={{ backgroundImage: 'none' }}
+              >
+                <option value="todos">PERSONAL</option>
+                {technicians.map(tech => (
+                  <option key={tech.id} value={tech.name}>{tech.name}</option>
+                ))}
+              </select>
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
+                <ChevronDown size={14} className="sm:size-[16px]" />
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -557,87 +680,63 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
         <div className="hidden lg:block overflow-x-auto custom-scrollbar">
           <table className="w-full text-left border-collapse border border-slate-300">
             <thead>
-              <tr className="bg-slate-100/80 border-b-2 border-slate-300">
-                <th className="px-4 py-4 w-12 text-center text-[10px] font-black text-slate-400 bg-slate-100 uppercase tracking-widest border border-slate-300">#</th>
-                <th 
-                  onClick={() => handleSort('incidentNumber')}
-                  className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors group"
-                >
-                  <div className="flex items-center gap-2">
-                    Incidente <SortIcon columnKey="incidentNumber" />
-                  </div>
+              <tr className="bg-slate-100/90 border-b-2 border-slate-400">
+                <th className="px-4 py-4 w-12 text-center text-[10px] font-black text-slate-900 bg-slate-200/50 uppercase tracking-widest border border-slate-300 whitespace-nowrap">#</th>
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest whitespace-nowrap">
+                  Incidente
                 </th>
-                <th 
-                  onClick={() => handleSort('title')}
-                  className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors group"
-                >
-                  <div className="flex items-center gap-2">
-                    Actividad / Labor Realizada <SortIcon columnKey="title" />
-                  </div>
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
+                  Código
                 </th>
-                <th 
-                  onClick={() => handleSort('participantsCount')}
-                  className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors group"
-                >
-                  <div className="flex items-center gap-2">
-                    Técnicos <SortIcon columnKey="participantsCount" />
-                  </div>
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest whitespace-nowrap">
+                  Actividad / Labor Realizada
                 </th>
-                <th 
-                  onClick={() => handleSort('region')}
-                  className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center cursor-pointer hover:bg-slate-100 transition-colors group"
-                >
-                  <div className="flex items-center justify-center gap-2">
-                    Región <SortIcon columnKey="region" />
-                  </div>
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest whitespace-nowrap">
+                  Técnicos
                 </th>
-                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
+                  Región
+                </th>
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
                   Entrada AM
                 </th>
-                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
                   Salida AM
                 </th>
-                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
                   Pausa
                 </th>
-                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
                   Entrada PM
                 </th>
-                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
                   Salida PM
                 </th>
-                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
                   ST / Déficit
                 </th>
-                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
                   Horas
                 </th>
-                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-left">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-left whitespace-nowrap">
+                  Causa
+                </th>
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-left whitespace-nowrap">
                   Justificación
                 </th>
-                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
                   Documentación
                 </th>
-                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
                   Manejo
                 </th>
-                <th 
-                  onClick={() => handleSort('perDiem')}
-                  className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center cursor-pointer hover:bg-slate-100 transition-colors group"
-                >
-                  <div className="flex items-center justify-center gap-2">
-                    Viático <SortIcon columnKey="perDiem" />
-                  </div>
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
+                  Viático
                 </th>
-                <th 
-                  onClick={() => handleSort('fleet')}
-                  className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center cursor-pointer hover:bg-slate-100 transition-colors group"
-                >
-                  <div className="flex items-center justify-center gap-2">
-                    Flota <SortIcon columnKey="fleet" />
-                  </div>
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
+                  Flota
                 </th>
-                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Acciones</th>
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center">Acciones</th>
               </tr>
             </thead>
             <tbody className="font-medium">
@@ -655,8 +754,8 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                       )}
                     >
                       <td className={cn(
-                        "px-4 py-4 text-center font-mono text-[10px] transition-colors border border-slate-300",
-                        isHighlighted ? "text-brand-blue bg-brand-blue/10" : "text-slate-400 bg-slate-50/50"
+                        "px-4 py-4 text-center font-mono text-xs font-bold transition-colors border border-slate-300",
+                        isHighlighted ? "text-brand-blue bg-brand-blue/10" : "text-slate-600 bg-slate-50/50"
                       )}>
                         {index + 1}
                         {isHighlighted && (
@@ -664,108 +763,127 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                         )}
                       </td>
                     <td className="px-6 py-4 border border-slate-300">
-                      <span className="font-mono text-[10px] font-black text-brand-blue bg-brand-blue/5 px-2 py-1 rounded whitespace-nowrap">
+                      <span className="font-mono text-xs font-bold text-brand-blue bg-brand-blue/10 px-2 py-1 rounded whitespace-nowrap border border-brand-blue/20">
                         {activity.incidentNumber || 'S/N'}
                       </span>
                     </td>
+                    <td className="px-6 py-4 border border-slate-300 text-center">
+                      <span className="text-xs font-mono font-black text-slate-800 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-300 uppercase tracking-wider block shadow-sm">
+                        {activity.code || 'HORA'}
+                      </span>
+                    </td>
                     <td className="px-6 py-4 border border-slate-300 min-w-[320px]">
-                      <p className="text-sm font-bold text-slate-900 mb-2">{activity.title}</p>
-                      <div className="max-h-24 overflow-y-auto custom-scrollbar pr-2 bg-slate-50/50 rounded-lg p-2 border border-slate-300">
-                        <p className="text-[10px] text-slate-500 leading-relaxed whitespace-pre-wrap">
-                          {activity.description}
-                        </p>
+                      <p className="text-sm font-black text-slate-900 mb-1.5">{activity.title}</p>
+                      <div className="bg-slate-100/60 rounded-lg p-2 border border-slate-300">
+                        <ExpandableText 
+                          text={activity.description || ''} 
+                          className="text-xs text-slate-800 font-medium leading-relaxed whitespace-pre-wrap"
+                          maxLength={100}
+                        />
                       </div>
                     </td>
                     <td className="px-6 py-4 border border-slate-300">
-                      <div className="flex flex-col gap-2">
+                      <div className="flex flex-row items-stretch gap-2.5 max-w-[480px] overflow-x-auto py-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
                         {activity.participants?.map((p, pIdx) => {
                           const techMatch = technicians.find(t => t.name === p);
-                          const cedula = techMatch && (techMatch as any).idCard ? (techMatch as any).idCard : (techMatch?.employeeId || 'S/N');
                           return (
-                            <div key={`activity-${activity.id}-participant-${pIdx}`} className="flex flex-col bg-slate-100 px-2 py-1 rounded">
-                              <span className="text-[10px] font-bold text-slate-700 italic">
+                            <div key={`activity-${activity.id}-participant-${pIdx}`} className="flex flex-col justify-between bg-slate-200/60 px-2.5 py-1.5 rounded shadow-sm border border-slate-300/40 min-w-[130px] shrink-0">
+                              <span className="text-xs font-extrabold text-slate-900 leading-tight truncate" title={p.toUpperCase()}>
                                 {p.toUpperCase()}
                               </span>
-                              <span className="text-[9px] font-mono text-brand-blue font-black">
-                                P00: {techMatch?.employeeId || 'S/N'}
-                              </span>
-                              <span className="text-[8px] font-mono text-brand-blue font-black uppercase tracking-wider mt-0.5">
-                                {techMatch?.specialty || 'DATOS'}
-                              </span>
+                              <div className="mt-1 flex flex-col">
+                                <span className="text-[10px] font-mono text-brand-blue font-bold">
+                                  P00: {techMatch?.employeeId || 'S/N'}
+                                </span>
+                                <span className="text-[9px] font-mono text-slate-800 font-extrabold uppercase tracking-wider mt-0.5">
+                                  {techMatch?.department || techMatch?.specialty || 'DATOS'}
+                                </span>
+                              </div>
                             </div>
                           );
-                        }) || <span className="text-[10px] text-slate-300">N/A</span>}
+                        }) || <span className="text-xs text-slate-400">N/A</span>}
                       </div>
                     </td>
                     <td className="px-6 py-4 border border-slate-300 text-center">
-                      <span className="text-[10px] font-bold text-slate-700">{activity.region || 'Central'}</span>
+                      <span className="text-xs font-extrabold text-slate-900">{activity.region || 'Central'}</span>
                     </td>
                     <td className="px-4 py-4 border border-slate-300 text-center">
-                      <span className="text-xs font-mono font-black text-slate-700">{formatTimeAMPM(activity.startTimeMorning || '07:45')}</span>
+                      <span className="text-xs font-mono font-black text-slate-850 bg-slate-50 px-1.5 py-0.5 border border-slate-300 rounded shadow-sm">{formatTimeAMPM(activity.startTimeMorning || '07:45')}</span>
                     </td>
                     <td className="px-4 py-4 border border-slate-300 text-center">
-                      <span className="text-xs font-mono font-black text-slate-700">{formatTimeAMPM(activity.endTimeMorning || '11:45')}</span>
+                      <span className="text-xs font-mono font-black text-slate-850 bg-slate-50 px-1.5 py-0.5 border border-slate-300 rounded shadow-sm">{formatTimeAMPM(activity.endTimeMorning || '11:45')}</span>
                     </td>
                     <td className="px-4 py-4 border border-slate-300 text-center">
-                      <span className="text-[10px] font-bold text-slate-600">{activity.hasPause || 'SI'}</span>
+                      <span className="text-xs font-bold text-slate-900 bg-slate-100/50 px-2 py-0.5 border border-slate-300 rounded shadow-sm">{activity.hasPause || 'SI'}</span>
                     </td>
                     <td className="px-4 py-4 border border-slate-300 text-center">
-                      <span className="text-xs font-mono font-black text-slate-700">{formatTimeAMPM(activity.startTimeAfternoon || '12:45')}</span>
+                      <span className="text-xs font-mono font-black text-slate-850 bg-slate-50 px-1.5 py-0.5 border border-slate-300 rounded shadow-sm">{formatTimeAMPM(activity.startTimeAfternoon || '12:45')}</span>
                     </td>
                     <td className="px-4 py-4 border border-slate-300 text-center">
-                      <span className="text-xs font-mono font-black text-slate-700">{formatTimeAMPM(activity.endTimeAfternoon || activity.endTime || '16:00')}</span>
+                      <span className="text-xs font-mono font-black text-slate-850 bg-slate-50 px-1.5 py-0.5 border border-slate-300 rounded shadow-sm">{formatTimeAMPM(activity.endTimeAfternoon || activity.endTime || '16:00')}</span>
                     </td>
-                    <td className="px-6 py-4 border border-slate-300 text-center bg-slate-50/30">
+                    <td className="px-6 py-4 border border-slate-300 text-center bg-slate-100/10">
                       {(activity.overtimeHours || 0) !== 0 ? (
                         <div className="flex flex-col items-center">
                           <span className={cn(
-                            "text-[10px] font-black px-2 py-0.5 rounded-full border shadow-sm leading-none",
+                            "text-xs font-black px-2.5 py-1 rounded-full border shadow-sm leading-none whitespace-nowrap",
                             (activity.overtimeHours || 0) > 0 
-                              ? "text-emerald-600 bg-emerald-50 border-emerald-100" 
-                              : "text-red-600 bg-red-50 border-red-100"
+                              ? "text-emerald-700 bg-emerald-50 border-emerald-300" 
+                              : "text-red-700 bg-red-50 border-red-300"
                           )}>
                             {(activity.overtimeHours || 0) > 0 ? '+' : ''}{formatHours(activity.overtimeHours || 0)}
                           </span>
                         </div>
                       ) : (
-                        <span className="text-[10px] font-black px-2 py-0.5 rounded-md border text-slate-400 bg-slate-50 border-slate-300">-</span>
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-md border text-slate-650 bg-slate-50 border-slate-300">-</span>
                       )}
                     </td>
                     <td className="px-6 py-4 border border-slate-300 text-center">
-                      <span className="text-[10px] font-black px-2 py-0.5 rounded-md border text-brand-blue bg-brand-blue/5 border-brand-blue/20">
+                      <span className="text-xs font-black px-2.5 py-1 rounded-md border text-brand-blue bg-brand-blue/10 border-brand-blue/30 whitespace-nowrap shadow-sm">
                         {activity.totalHours ? `${formatHours(activity.totalHours)}` : '-'}
                       </span>
                     </td>
                     <td className="px-6 py-4 border border-slate-300">
-                      <div className="max-w-[200px] max-h-20 overflow-y-auto custom-scrollbar pr-1">
-                        <p className="text-[10px] text-slate-500 leading-relaxed italic">
-                          {activity.justification || ((activity.overtimeHours || 0) === 0 ? '' : 'No justificado.')}
-                        </p>
+                      <div className="max-w-[180px] bg-transparent">
+                        <ExpandableText 
+                          text={activity.cause || '---'} 
+                          className="text-xs text-slate-900 leading-relaxed font-black uppercase tracking-wide"
+                          maxLength={35}
+                        />
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 border border-slate-300">
+                      <div className="max-w-[200px] bg-transparent">
+                        <ExpandableText 
+                          text={activity.justification || (((activity.overtimeHours || 0) === 0) ? '' : 'No justificado.')} 
+                          className="text-xs text-slate-900 font-bold leading-relaxed italic"
+                          maxLength={35}
+                        />
                       </div>
                     </td>
                     <td className="px-6 py-4 border border-slate-300 text-center">
                       <span className={cn(
-                        "text-[10px] font-black px-2 py-0.5 rounded-md border inline-block min-w-[32px]",
-                        activity.documentation === 'SI' ? "text-brand-blue bg-brand-blue/5 border-brand-blue/20" : "text-slate-400 bg-slate-50 border-slate-300"
+                        "text-xs font-black px-2 py-1 rounded-md border inline-block min-w-[35px] shadow-sm",
+                        activity.documentation === 'SI' ? "text-brand-blue bg-brand-blue/10" : "text-slate-800 bg-slate-100 border-slate-300"
                       )}>
                         {activity.documentation || 'NO'}
                       </span>
                     </td>
                     <td className="px-6 py-4 border border-slate-300 text-center">
-                      <span className="text-[10px] font-bold text-slate-700 truncate block max-w-[100px]">{activity.driver || 'S/N'}</span>
+                      <span className="text-xs font-bold text-slate-900 truncate block max-w-[100px] bg-slate-100 px-2 py-0.5 rounded border border-slate-300/60 shadow-sm">{activity.driver || 'S/N'}</span>
                     </td>
                     <td className="px-6 py-4 border border-slate-300 text-center">
                       {activity.hasPerDiem ? (
-                        <div className="flex flex-col items-center gap-0.5">
-                          <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">SÍ</span>
-                          <span className="text-xs font-black text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded-md border border-slate-300">Bs. {Number(activity.perDiemAmount || 0).toFixed(2)}</span>
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-xs font-black text-emerald-800 uppercase tracking-widest bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full">SÍ</span>
+                          <span className="text-xs font-black text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-300 shadow-sm">Bs. {Number(activity.perDiemAmount || 0).toFixed(2)}</span>
                         </div>
                       ) : (
-                        <span className="text-[10px] font-black px-2 py-0.5 rounded-md border text-slate-400 bg-slate-50 border-slate-300">NO</span>
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-md border text-slate-650 bg-slate-50 border-slate-300">NO</span>
                       )}
                     </td>
                     <td className="px-6 py-4 border border-slate-300 text-center">
-                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest truncate">
+                      <span className="text-xs font-black text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-300/60 shadow-sm uppercase tracking-wider block truncate max-w-[80px]">
                         {activity.fleet || '---'}
                       </span>
                     </td>
@@ -774,7 +892,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                         {onEdit && (
                           <button 
                             onClick={() => onEdit(activity)}
-                            className="p-1.5 text-slate-400 hover:text-brand-blue transition-colors rounded-lg hover:bg-white border border-transparent hover:border-slate-300"
+                            className="p-1.5 text-slate-500 hover:text-brand-blue transition-all rounded-lg bg-white border border-slate-200 shadow-sm hover:border-brand-blue/30 hover:shadow"
                           >
                              <FileText size={14} />
                           </button>
@@ -782,7 +900,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                         {onDelete && (
                           <button 
                             onClick={() => onDelete(activity.id, activity.title || 'Actividad')}
-                            className="p-1.5 text-slate-400 hover:text-red-600 transition-colors rounded-lg hover:bg-red-50 border border-transparent hover:border-red-100"
+                            className="p-1.5 text-slate-500 hover:text-red-600 transition-all rounded-lg bg-white border border-slate-200 shadow-sm hover:border-red-500/30 hover:shadow hover:bg-red-50"
                           >
                              <Trash2 size={14} />
                           </button>
@@ -833,19 +951,42 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                   
                   <div className="flex items-start justify-between gap-4">
                     <div className="space-y-1">
-                      <span className="font-mono text-[9px] font-black text-brand-blue bg-brand-blue/5 px-2 py-0.5 rounded whitespace-nowrap">
-                        {activity.incidentNumber || 'S/N'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[9px] font-black text-brand-blue bg-brand-blue/5 px-2 py-0.5 rounded whitespace-nowrap">
+                          {activity.incidentNumber || 'S/N'}
+                        </span>
+                        <span className="font-mono text-[9px] font-black text-slate-700 bg-slate-100 px-2 py-0.5 rounded whitespace-nowrap border border-slate-200">
+                          {activity.code || 'HORA'}
+                        </span>
+                      </div>
                       <h4 className="text-sm font-black text-slate-900 leading-tight">{activity.title}</h4>
                     </div>
                   </div>
 
-                  <div className="max-h-32 overflow-y-auto bg-white/50 p-2 rounded-xl border border-slate-300">
-                    <p className="text-[10px] text-slate-500 leading-relaxed whitespace-pre-wrap">{activity.description}</p>
+                  <div className="bg-white/50 p-2 rounded-xl border border-slate-300">
+                    <ExpandableText 
+                      text={activity.description || ''} 
+                      className="text-[10px] text-slate-500 leading-relaxed whitespace-pre-wrap"
+                      maxLength={100}
+                    />
+                    {activity.cause && (
+                      <div className="mt-2 pt-2 border-t border-slate-200">
+                        <span className="text-[8px] font-black tracking-widest uppercase text-slate-400 mb-1 block">Causa</span>
+                        <ExpandableText 
+                          text={activity.cause} 
+                          className="text-[9px] text-slate-700 font-bold leading-relaxed italic uppercase"
+                          maxLength={35}
+                        />
+                      </div>
+                    )}
                     {activity.justification && (
                       <div className="mt-2 pt-2 border-t border-slate-200">
                         <span className="text-[8px] font-black tracking-widest uppercase text-slate-400 mb-1 block">Justificación</span>
-                        <p className="text-[9px] text-slate-500 leading-relaxed italic">{activity.justification}</p>
+                        <ExpandableText 
+                           text={activity.justification} 
+                           className="text-[9px] text-slate-500 leading-relaxed italic"
+                           maxLength={35}
+                        />
                       </div>
                     )}
                   </div>
@@ -873,12 +1014,12 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                       <span className="text-[9px] font-mono text-slate-500 font-bold bg-white px-1.5 py-0.5 rounded border border-slate-300">
                         {formatTimeAMPM(activity.startTimeMorning || '-')} a {formatTimeAMPM(activity.endTimeAfternoon || '-')}
                       </span>
-                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded border text-brand-blue bg-brand-blue/5 border-brand-blue/20">
+                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded border text-brand-blue bg-brand-blue/5 border-brand-blue/20 whitespace-nowrap">
                         {activity.totalHours ? `${formatHours(activity.totalHours)}h` : '-'}
                       </span>
                       {(activity.overtimeHours || 0) !== 0 ? (
                         <span className={cn(
-                          "text-[9px] font-black px-1.5 py-0.5 rounded border", 
+                          "text-[9px] font-black px-1.5 py-0.5 rounded border whitespace-nowrap", 
                           (activity.overtimeHours || 0) > 0 
                             ? "bg-emerald-50 text-emerald-600 border-emerald-100" 
                             : "bg-red-50 text-red-600 border-red-100"
@@ -941,45 +1082,43 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
         </div>
 
         {sortedActivities.length === 0 && (
-          <div className="absolute inset-x-0 bottom-1/2 translate-y-1/2 flex flex-col items-center justify-center pointer-events-none">
-            <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 mb-4 border border-slate-300 shadow-inner">
-              <Database size={32} />
+          <div className="absolute inset-x-0 bottom-1/2 translate-y-1/2 flex flex-col items-center justify-center pointer-events-none opacity-90">
+            <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 mb-4 border border-slate-200 shadow-sm">
+              <Database size={32} strokeWidth={1.5} />
             </div>
-            <h4 className="text-lg font-display font-black text-slate-300 tracking-tight">Planilla Disponible</h4>
-            <p className="text-[10px] text-slate-300 font-bold uppercase tracking-widest">Sin registros para esta fecha técnica</p>
+            <h4 className="text-xl font-display font-black text-slate-400 tracking-tight mb-1">Planilla Disponible</h4>
+            <p className="text-[11px] text-slate-400/80 font-bold uppercase tracking-widest">Sin registros para esta fecha técnica</p>
           </div>
-        ) }
+        )}
       </div>
 
-      <div className="bg-slate-900 rounded-[2rem] border border-slate-800 shadow-2xl shadow-slate-900/40 overflow-hidden flex flex-col mt-2">
+      <div className="bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl shadow-slate-900/40 overflow-hidden flex flex-col">
         {/* Sección Día Actual */}
-        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center p-6 gap-6 w-full">
-          <div className="flex flex-wrap items-center justify-start gap-x-8 gap-y-6 w-full xl:w-auto">
-            <div className="flex flex-col items-start min-w-[90px]">
-               <span className="text-[10px] font-black text-brand-blue uppercase tracking-widest mb-0.5">Día Actual</span>
-               <span className="text-[11px] font-medium text-slate-400 whitespace-nowrap">
+        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center p-4 lg:p-5 gap-4 lg:gap-6 w-full">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 lg:gap-6 w-full xl:flex-1 min-w-0 sm:items-center">
+            <div className="col-span-2 sm:col-span-1 flex flex-col items-start border-b sm:border-b-0 pb-2 sm:pb-0 border-slate-800/60 xl:border-r xl:pr-6 xl:border-slate-800 sm:py-1">
+               <span className="text-[10px] font-black text-brand-blue uppercase tracking-widest mb-1">Día Actual</span>
+               <span className="text-sm font-bold text-slate-200 whitespace-nowrap">
                  {format(selectedDate, 'dd MMM yyyy')}
                </span>
             </div>
             
             <button 
               onClick={() => setSummaryDetails('total')}
-              className="flex flex-col items-start min-w-[80px] cursor-pointer hover:bg-slate-800/50 p-2 -m-2 rounded-xl transition-colors active:scale-95"
+              className="flex flex-col items-start cursor-pointer hover:bg-slate-800/50 p-1.5 rounded-lg transition-colors active:scale-95 text-left"
             >
-              <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1.5 flex items-center gap-1"><Clock size={10} /> Total Horas</span>
-              <span className="text-2xl font-display font-black leading-none text-white">
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Clock size={10} /> Total Horas</span>
+              <span className="text-lg font-display font-black leading-none text-white">
                 {formatHours(sortedActivities.reduce((acc, a) => acc + (a.totalHours || (a.overtimeHours || 0) + 8), 0))}
               </span>
             </button>
             
-            <div className="hidden sm:block w-[1px] h-10 bg-slate-800" />
-            
             <button 
               onClick={() => setSummaryDetails('st')}
-              className="flex flex-col items-start min-w-[80px] cursor-pointer hover:bg-slate-800/50 p-2 -m-2 rounded-xl transition-colors active:scale-95"
+              className="flex flex-col items-start cursor-pointer hover:bg-slate-800/50 p-1.5 rounded-lg transition-colors active:scale-95 text-left"
             >
-              <span className="text-[9px] font-black text-emerald-500/60 uppercase tracking-[0.2em] mb-1.5 flex items-center gap-1"><Zap size={10} /> ST Acumulado</span>
-              <span className="text-2xl font-display font-black text-emerald-400 leading-none">
+              <span className="text-[8px] font-black text-emerald-500/60 uppercase tracking-wider mb-1 flex items-center gap-1"><Zap size={10} /> ST Acumulado</span>
+              <span className="text-lg font-display font-black text-emerald-400 leading-none">
                 {formatHours(sortedActivities.reduce((acc, a) => {
                   const st = (a.overtimeHours || 0);
                   return acc + (st > 0 ? st : 0);
@@ -987,14 +1126,12 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
               </span>
             </button>
             
-            <div className="hidden sm:block w-[1px] h-10 bg-slate-800" />
-            
             <button 
               onClick={() => setSummaryDetails('df')}
-              className="flex flex-col items-start min-w-[80px] cursor-pointer hover:bg-slate-800/50 p-2 -m-2 rounded-xl transition-colors active:scale-95"
+              className="flex flex-col items-start cursor-pointer hover:bg-slate-800/50 p-1.5 rounded-lg transition-colors active:scale-95 text-left"
             >
-              <span className="text-[9px] font-black text-amber-500/60 uppercase tracking-[0.2em] mb-1.5 flex items-center gap-1"><TrendingDown size={10} /> DF Acumulado</span>
-              <span className="text-2xl font-display font-black text-amber-400 leading-none">
+              <span className="text-[8px] font-black text-amber-500/60 uppercase tracking-wider mb-1 flex items-center gap-1"><TrendingDown size={10} /> DF Acumulado</span>
+              <span className="text-lg font-display font-black text-amber-400 leading-none">
                 {formatHours(Math.abs(sortedActivities.reduce((acc, a) => {
                   const st = (a.overtimeHours || 0);
                   return acc + (st < 0 ? st : 0);
@@ -1002,27 +1139,37 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
               </span>
             </button>
             
-            <div className="hidden sm:block w-[1px] h-10 bg-slate-800" />
-            
             <button 
               onClick={() => setSummaryDetails('exceso')}
-              className="flex items-center gap-3 bg-white/5 px-4 py-2.5 rounded-2xl border border-white/5 cursor-pointer hover:border-white/20 hover:bg-white/10 transition-colors active:scale-95"
+              className="flex items-center gap-2 bg-white/5 px-2.5 py-1.5 rounded-xl border border-white/5 cursor-pointer hover:border-white/20 hover:bg-white/10 transition-colors active:scale-95 self-start sm:self-auto w-full"
             >
               <div className="flex flex-col items-start">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <AlertOctagon size={12} className="text-brand-red animate-pulse" />
-                  <span className="text-[9px] font-black text-brand-red uppercase tracking-widest leading-none">Jornada {'>'} 10h</span>
+                <div className="flex items-center gap-1 mb-0.5">
+                  <AlertOctagon size={11} className="text-brand-red animate-pulse" />
+                  <span className="text-[8px] font-black text-brand-red uppercase tracking-widest leading-none xs:whitespace-nowrap">Jornada {'>'} 10h</span>
                 </div>
-                <span className="text-2xl font-display font-black text-white leading-none">
+                <span className="text-lg font-display font-black text-white leading-none">
                   {excesoPersonas}
                 </span>
               </div>
             </button>
           </div>
           
-          <div className="hidden xl:block text-right shrink-0">
-            <p className="text-[10px] font-bold text-slate-500 italic leading-tight uppercase tracking-wider">CANTV · Datos y Transmisión</p>
-            <p className="text-[9px] font-black text-brand-blue uppercase tracking-[0.3em] mt-1.5 shadow-sm">Central Maracay 4357</p>
+          <div className="grid grid-cols-2 xl:flex xl:flex-col 2xl:flex-row w-full xl:w-[220px] shrink-0 gap-2 pt-2 xl:pt-0">
+            <button
+              onClick={() => exportPlanificacionToExcel()}
+              className="justify-center flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 text-slate-300 rounded-lg hover:bg-white/10 hover:text-white transition-colors text-[10px] font-bold uppercase tracking-wider w-full"
+              title="Exportar Planificación Diaria"
+            >
+              <Download size={12} /> Plan Diario
+            </button>
+            <button
+              onClick={() => exportSobretiempoToExcel()}
+              className="justify-center flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors text-[10px] font-bold uppercase tracking-wider w-full"
+              title="Exportar ST Diario"
+            >
+              <Download size={12} /> ST Diario
+            </button>
           </div>
         </div>
 
@@ -1030,82 +1177,81 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
         <div className="w-full h-px bg-slate-800" />
 
         {/* Sección Semanal */}
-        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center p-6 bg-slate-800/20 gap-6 w-full">
-          <div className="flex flex-wrap items-center justify-start gap-x-8 gap-y-6 w-full xl:w-auto">
-            <div className="flex flex-col items-start min-w-[90px]">
-               <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-0.5">Semana</span>
-               <span className="text-[11px] font-medium text-slate-400 whitespace-nowrap">
+        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center p-4 lg:p-5 bg-slate-800/20 gap-4 lg:gap-6 w-full">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 lg:gap-6 w-full xl:flex-1 min-w-0 sm:items-center">
+            <div className="col-span-2 sm:col-span-1 flex flex-col items-start border-b sm:border-b-0 pb-2 sm:pb-0 border-slate-800/60 xl:border-r xl:pr-6 xl:border-slate-800 sm:py-1">
+               <span className="text-[10px] font-black text-brand-blue uppercase tracking-widest mb-1">Semana</span>
+               <span className="text-sm font-bold text-slate-200 whitespace-nowrap">
                  {format(startOfWeek(selectedDate, {weekStartsOn: 1}), 'dd MMM')} - {format(endOfWeek(selectedDate, {weekStartsOn: 1}), 'dd MMM')}
                </span>
             </div>
             
             <button 
               onClick={() => setWeeklySummaryDetails('total')}
-              className="flex flex-col items-start min-w-[80px] cursor-pointer hover:bg-slate-800/50 p-2 -m-2 rounded-xl transition-colors active:scale-95"
+              className="flex flex-col items-start cursor-pointer hover:bg-slate-800/50 p-1.5 rounded-lg transition-colors active:scale-95 text-left"
             >
-              <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1.5 flex items-center gap-1"><Clock size={10} /> Total (Sem)</span>
-              <span className="text-xl font-display font-black leading-none text-slate-300">
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Clock size={10} /> Total (Sem)</span>
+              <span className="text-lg font-display font-black leading-none text-slate-300">
                 {formatHours(weeklyActivities.reduce((acc, a) => acc + (a.totalHours || (a.overtimeHours || 0) + 8), 0))}
               </span>
             </button>
             
-            <div className="hidden sm:block w-[1px] h-8 bg-slate-800" />
-            
             <button 
               onClick={() => setWeeklySummaryDetails('st')}
-              className="flex flex-col items-start min-w-[80px] cursor-pointer hover:bg-slate-800/50 p-2 -m-2 rounded-xl transition-colors active:scale-95"
+              className="flex flex-col items-start cursor-pointer hover:bg-slate-800/50 p-1.5 rounded-lg transition-colors active:scale-95 text-left"
             >
-              <span className="text-[9px] font-black text-emerald-500/60 uppercase tracking-[0.2em] mb-1.5 flex items-center gap-1"><Zap size={10} /> ST Acumulado</span>
-              <span className="text-xl font-display font-black text-emerald-500 leading-none">
+              <span className="text-[8px] font-black text-emerald-500/60 uppercase tracking-wider mb-1 flex items-center gap-1"><Zap size={10} /> ST Acumulado</span>
+              <span className="text-lg font-display font-black text-emerald-500 leading-none">
                 {formatHours(weeklyActivities.reduce((acc, a) => {
-                  const st = (a.overtimeHours || 0);
-                  return acc + (st > 0 ? st : 0);
+                  const r_st = (a.overtimeHours || 0);
+                  return acc + (r_st > 0 ? r_st : 0);
                 }, 0))}
               </span>
             </button>
             
-            <div className="hidden sm:block w-[1px] h-8 bg-slate-800" />
-            
             <button 
               onClick={() => setWeeklySummaryDetails('df')}
-              className="flex flex-col items-start min-w-[80px] cursor-pointer hover:bg-slate-800/50 p-2 -m-2 rounded-xl transition-colors active:scale-95"
+              className="flex flex-col items-start cursor-pointer hover:bg-slate-800/50 p-1.5 rounded-lg transition-colors active:scale-95 text-left"
             >
-              <span className="text-[9px] font-black text-amber-500/60 uppercase tracking-[0.2em] mb-1.5 flex items-center gap-1"><TrendingDown size={10} /> DF Acumulado</span>
-              <span className="text-xl font-display font-black text-amber-500 leading-none">
+              <span className="text-[8px] font-black text-amber-500/60 uppercase tracking-wider mb-1 flex items-center gap-1"><TrendingDown size={10} /> DF Acumulado</span>
+              <span className="text-lg font-display font-black text-amber-500 leading-none">
                 {formatHours(Math.abs(weeklyActivities.reduce((acc, a) => {
-                  const st = (a.overtimeHours || 0);
-                  return acc + (st < 0 ? st : 0);
+                  const r_st = (a.overtimeHours || 0);
+                  return acc + (r_st < 0 ? r_st : 0);
                 }, 0)))}
               </span>
             </button>
             
-            <div className="hidden sm:block w-[1px] h-8 bg-slate-800" />
-            
             <button 
               onClick={() => setWeeklySummaryDetails('exceso')}
-              className="flex flex-col items-start min-w-[80px] cursor-pointer hover:bg-slate-800/50 p-2 -m-2 rounded-xl transition-colors active:scale-95"
+              className="flex items-center gap-2 bg-white/5 px-2.5 py-1.5 rounded-xl border border-white/5 cursor-pointer hover:border-white/20 hover:bg-white/10 transition-colors active:scale-95 self-start sm:self-auto w-full"
             >
-              <span className="text-[9px] font-black text-brand-red/80 uppercase tracking-widest mb-1.5 flex items-center gap-1"><AlertOctagon size={10} /> Jornadas {'>'} 10h</span>
-              <span className="text-xl font-display font-black text-brand-red leading-none">
-                {excesoPersonasSemanal}
-              </span>
+              <div className="flex flex-col items-start">
+                <div className="flex items-center gap-1 mb-0.5">
+                  <AlertOctagon size={11} className="text-brand-red animate-pulse" />
+                  <span className="text-[8px] font-black text-brand-red uppercase tracking-widest leading-none xs:whitespace-nowrap">Jornada {'>'} 10h</span>
+                </div>
+                <span className="text-lg font-display font-black text-white leading-none">
+                  {excesoPersonasSemanal}
+                </span>
+              </div>
             </button>
           </div>
           
-          <div className="flex flex-wrap items-center w-full xl:w-auto gap-3 justify-start xl:justify-end shrink-0 pt-2 xl:pt-0">
+          <div className="grid grid-cols-2 xl:flex xl:flex-col 2xl:flex-row w-full xl:w-[220px] shrink-0 gap-2 pt-2 xl:pt-0">
             <button
-              onClick={() => exportPlanificacionToExcel(weeklyActivities, true)}
-              className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-4 py-2.5 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white transition-all text-[11px] font-bold"
+               onClick={() => exportPlanificacionToExcel(weeklyActivities, 'weekly')}
+              className="justify-center flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 text-slate-300 rounded-lg hover:bg-white/10 hover:text-white transition-colors text-[10px] font-bold uppercase tracking-wider w-full"
               title="Exportar Planificación Semanal"
             >
-              <Download size={14} /> Plan Semanal
+              <Download size={12} /> Plan Semanal
             </button>
             <button
-              onClick={() => exportSobretiempoToExcel(weeklyActivities, true)}
-              className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-4 py-2.5 bg-brand-blue/20 text-brand-blue rounded-xl hover:bg-brand-blue hover:text-white transition-all text-[11px] font-bold shadow-lg shadow-brand-blue/10"
+               onClick={() => exportSobretiempoToExcel(weeklyActivities, 'weekly')}
+              className="justify-center flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors text-[10px] font-bold uppercase tracking-wider w-full"
               title="Exportar ST/DF Semanal"
             >
-              <Download size={14} /> ST Semanal
+              <Download size={12} /> ST Semanal
             </button>
           </div>
         </div>
@@ -1115,8 +1261,8 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
       {summaryDetails && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setSummaryDetails(null)}></div>
-          <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+          <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
               <div>
                 <h3 className="font-display font-black text-slate-900 text-lg">
                   {summaryDetails === 'total' && 'Desglose de Horas Totales'}
@@ -1125,24 +1271,65 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                   {summaryDetails === 'exceso' && 'Jornadas Mayores a 10h'}
                 </h3>
               </div>
-              <button onClick={() => setSummaryDetails(null)} className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-200 transition-colors">
+              <button onClick={() => setSummaryDetails(null)} className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-200 transition-colors shrink-0">
                 <X size={20} />
               </button>
             </div>
-            <div className="p-0 max-h-[60vh] overflow-y-auto custom-scrollbar">
+            <div className="p-0 overflow-y-auto flex-1 custom-scrollbar">
               <table className="w-full text-left">
-                <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-sm border-b border-slate-200 z-10">
+                <thead className="sticky top-0 bg-slate-200/90 backdrop-blur-sm border-b border-slate-300 z-10">
                   <tr>
-                    <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Actividad / Técnico</th>
-                    <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Horas</th>
+                    <th className="px-6 py-3 text-[10px] font-black text-slate-900 uppercase tracking-widest">Actividad / Técnico</th>
+                    <th className="px-6 py-3 text-[10px] font-black text-slate-900 uppercase tracking-widest text-right">Horas</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {sortedActivities.filter(a => {
+                  {summaryDetails === 'exceso' ? (
+                    (() => {
+                      const horasPorPersona: Record<string, { total: number, names: string[], titles: string[] }> = {};
+                      sortedActivities.forEach(a => {
+                        const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
+                        parts.forEach(p => {
+                          if (!horasPorPersona[p]) horasPorPersona[p] = { total: 0, names: [p], titles: [] };
+                          horasPorPersona[p].total += (a.totalHours || 0);
+                          if (!horasPorPersona[p].titles.includes(a.title)) {
+                            horasPorPersona[p].titles.push(a.title);
+                          }
+                        });
+                      });
+
+                      const items = Object.entries(horasPorPersona)
+                        .filter(([_, data]) => data.total > 10)
+                        .map(([name, data]) => ({ name, ...data }));
+
+                      if (items.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan={2} className="px-6 py-8 text-center text-sm font-bold text-slate-400">No hay registros</td>
+                          </tr>
+                        );
+                      }
+
+                      return items.map((item, idx) => (
+                        <tr key={`summary-exceso-${idx}`} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="text-sm font-bold text-slate-900 mb-1 leading-tight">{item.name}</div>
+                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                               {item.titles.slice(0, 2).join(', ')}{item.titles.length > 2 ? '...' : ''}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <span className="text-xs font-black px-2.5 py-1 rounded-lg border inline-block text-brand-red bg-brand-red/5 border-brand-red/10">
+                              {formatHours(item.total)}h
+                            </span>
+                          </td>
+                        </tr>
+                      ));
+                    })()
+                  ) : sortedActivities.filter(a => {
                     if (summaryDetails === 'total') return true;
                     if (summaryDetails === 'st') return (a.overtimeHours || 0) > 0;
                     if (summaryDetails === 'df') return (a.overtimeHours || 0) < 0;
-                    if (summaryDetails === 'exceso') return (a.totalHours || ((a.overtimeHours || 0) + 8)) > 10;
                     return false;
                   }).length === 0 ? (
                     <tr>
@@ -1152,11 +1339,10 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                     if (summaryDetails === 'total') return true;
                     if (summaryDetails === 'st') return (a.overtimeHours || 0) > 0;
                     if (summaryDetails === 'df') return (a.overtimeHours || 0) < 0;
-                    if (summaryDetails === 'exceso') return (a.totalHours || ((a.overtimeHours || 0) + 8)) > 10;
                     return false;
                   }).map((activity, idx) => {
                     let value = 0;
-                    if (summaryDetails === 'total' || summaryDetails === 'exceso') value = activity.totalHours || ((activity.overtimeHours || 0) + 8);
+                    if (summaryDetails === 'total') value = activity.totalHours || ((activity.overtimeHours || 0) + 8);
                     if (summaryDetails === 'st') value = activity.overtimeHours || 0;
                     if (summaryDetails === 'df') value = Math.abs(activity.overtimeHours || 0);
 
@@ -1173,7 +1359,6 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                             "text-xs font-black px-2.5 py-1 rounded-lg border inline-block",
                             summaryDetails === 'st' ? "text-emerald-600 bg-emerald-50 border-emerald-100" :
                             summaryDetails === 'df' ? "text-amber-600 bg-amber-50 border-amber-100" :
-                            summaryDetails === 'exceso' ? "text-brand-red bg-brand-red/5 border-brand-red/10" :
                             "text-brand-blue bg-brand-blue/5 border-brand-blue/10"
                           )}>
                             {formatHours(value)}h
@@ -1185,7 +1370,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                 </tbody>
               </table>
             </div>
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end shrink-0">
               <button 
                 onClick={() => setSummaryDetails(null)}
                 className="px-6 py-2.5 bg-slate-800 text-white rounded-xl font-bold text-xs hover:bg-slate-700 active:scale-95 transition-all"
@@ -1200,8 +1385,8 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
       {weeklySummaryDetails && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setWeeklySummaryDetails(null)}></div>
-          <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+          <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
               <div>
                 <h3 className="font-display font-black text-slate-900 text-lg">
                   {weeklySummaryDetails === 'total' && 'Desglose de Horas Totales (Semanal)'}
@@ -1210,24 +1395,84 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                   {weeklySummaryDetails === 'exceso' && 'Jornadas Mayores a 10h (Semanal)'}
                 </h3>
               </div>
-              <button onClick={() => setWeeklySummaryDetails(null)} className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-200 transition-colors">
+              <button onClick={() => setWeeklySummaryDetails(null)} className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-200 transition-colors shrink-0">
                 <X size={20} />
               </button>
             </div>
-            <div className="p-0 max-h-[60vh] overflow-y-auto custom-scrollbar">
+            <div className="p-0 overflow-y-auto flex-1 custom-scrollbar">
               <table className="w-full text-left">
-                <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-sm border-b border-slate-200 z-10">
+                <thead className="sticky top-0 bg-slate-200/90 backdrop-blur-sm border-b border-slate-300 z-10">
                   <tr>
-                    <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Actividad / Técnico</th>
-                    <th className="px-6 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Horas</th>
+                    <th className="px-6 py-3 text-[10px] font-black text-slate-900 uppercase tracking-widest">Actividad / Técnico</th>
+                    <th className="px-6 py-3 text-[10px] font-black text-slate-900 uppercase tracking-widest text-right">Horas</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {weeklyActivities.filter(a => {
+                  {weeklySummaryDetails === 'exceso' ? (
+                    (() => {
+                      const hoursPerPersonPerDay: Record<string, { total: number, name: string, date: Date, titles: string[] }> = {};
+                      
+                      weeklyActivities.forEach(a => {
+                        let dateKey = '';
+                        let dateObj: Date;
+                        if (a.date && typeof a.date.toDate === 'function') {
+                          dateObj = a.date.toDate();
+                          dateKey = dateObj.toISOString().split('T')[0];
+                        } else {
+                          dateObj = new Date(a.date as any);
+                          dateKey = dateObj.toISOString().split('T')[0];
+                        }
+                        
+                        const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
+                        parts.forEach(p => {
+                          const key = `${dateKey}_${p}`;
+                          if (!hoursPerPersonPerDay[key]) {
+                            hoursPerPersonPerDay[key] = { total: 0, name: p, date: dateObj, titles: [] };
+                          }
+                          hoursPerPersonPerDay[key].total += (a.totalHours || 0);
+                          if (!hoursPerPersonPerDay[key].titles.includes(a.title)) {
+                            hoursPerPersonPerDay[key].titles.push(a.title);
+                          }
+                        });
+                      });
+
+                      const items = Object.values(hoursPerPersonPerDay)
+                        .filter(h => h.total > 10)
+                        .sort((a, b) => b.date.getTime() - a.date.getTime());
+
+                      if (items.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan={2} className="px-6 py-8 text-center text-sm font-bold text-slate-400">No hay registros</td>
+                          </tr>
+                        );
+                      }
+
+                      return items.map((item, idx) => (
+                        <tr key={`weekly-exceso-${idx}`} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="text-sm font-bold text-slate-900 mb-0.5 leading-tight">{item.name}</div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black text-slate-400 uppercase bg-slate-100 px-1.5 py-0.5 rounded">
+                                {format(item.date, 'dd MMM', { locale: es })}
+                              </span>
+                              <span className="text-[9px] font-bold text-slate-500 truncate max-w-[200px]">
+                                {item.titles.join(', ')}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <span className="text-xs font-black px-2.5 py-1 rounded-lg border inline-block text-brand-red bg-brand-red/5 border-brand-red/10">
+                              {formatHours(item.total)}h
+                            </span>
+                          </td>
+                        </tr>
+                      ));
+                    })()
+                  ) : weeklyActivities.filter(a => {
                     if (weeklySummaryDetails === 'total') return true;
                     if (weeklySummaryDetails === 'st') return (a.overtimeHours || 0) > 0;
                     if (weeklySummaryDetails === 'df') return (a.overtimeHours || 0) < 0;
-                    if (weeklySummaryDetails === 'exceso') return (a.totalHours || ((a.overtimeHours || 0) + 8)) > 10;
                     return false;
                   }).length === 0 ? (
                     <tr>
@@ -1237,11 +1482,10 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                     if (weeklySummaryDetails === 'total') return true;
                     if (weeklySummaryDetails === 'st') return (a.overtimeHours || 0) > 0;
                     if (weeklySummaryDetails === 'df') return (a.overtimeHours || 0) < 0;
-                    if (weeklySummaryDetails === 'exceso') return (a.totalHours || ((a.overtimeHours || 0) + 8)) > 10;
                     return false;
                   }).map((activity, idx) => {
                     let value = 0;
-                    if (weeklySummaryDetails === 'total' || weeklySummaryDetails === 'exceso') value = activity.totalHours || ((activity.overtimeHours || 0) + 8);
+                    if (weeklySummaryDetails === 'total') value = activity.totalHours || ((activity.overtimeHours || 0) + 8);
                     if (weeklySummaryDetails === 'st') value = activity.overtimeHours || 0;
                     if (weeklySummaryDetails === 'df') value = Math.abs(activity.overtimeHours || 0);
 
@@ -1251,7 +1495,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                           <div className="text-sm font-bold text-slate-900 mb-1 leading-tight">{activity.title || 'Sin Título'}</div>
                           <div className="text-[10px] font-bold text-slate-500 flex gap-2 flex-wrap">
                             {activity.participants && activity.participants.length > 0 ? activity.participants.map(p => p.split(' ')[0]).join(', ') : activity.technicianName}
-                            <span className="bg-slate-200 px-1 rounded text-[8px] uppercase">{format(activity.date.toDate ? activity.date.toDate() : new Date(activity.date), 'dd MMM')}</span>
+                            <span className="bg-slate-200 px-1 rounded text-[8px] uppercase">{format(activity.date.toDate ? activity.date.toDate() : new Date(activity.date as any), 'dd MMM')}</span>
                           </div>
                         </td>
                         <td className="px-6 py-4 text-right">
@@ -1259,7 +1503,6 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                             "text-xs font-black px-2.5 py-1 rounded-lg border inline-block",
                             weeklySummaryDetails === 'st' ? "text-emerald-600 bg-emerald-50 border-emerald-100" :
                             weeklySummaryDetails === 'df' ? "text-amber-600 bg-amber-50 border-amber-100" :
-                            weeklySummaryDetails === 'exceso' ? "text-brand-red bg-brand-red/5 border-brand-red/10" :
                             "text-brand-blue bg-brand-blue/5 border-brand-blue/10"
                           )}>
                             {formatHours(value)}h
@@ -1271,7 +1514,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                 </tbody>
               </table>
             </div>
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end shrink-0">
               <button 
                 onClick={() => setWeeklySummaryDetails(null)}
                 className="px-6 py-2.5 bg-slate-800 text-white rounded-xl font-bold text-xs hover:bg-slate-700 active:scale-95 transition-all"

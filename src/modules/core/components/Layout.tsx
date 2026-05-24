@@ -12,7 +12,7 @@
  * - Componente responsivo: en móvil la barra lateral se vuelve colapsable.
  */
 import React from 'react';
-import { LayoutDashboard, ClipboardList, Settings, LogOut, Menu, X, Bell, User, ChevronLeft, ChevronRight, FileBarChart, Trash2 } from 'lucide-react';
+import { LayoutDashboard, ClipboardList, Settings, LogOut, Menu, X, Bell, User, ChevronLeft, ChevronRight, FileBarChart, Trash2, Database, MapPin, Server, Radio } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import NotificationCenter from '../../notifications/components/NotificationCenter';
 
@@ -50,53 +50,54 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
     <div className="min-h-screen flex bg-slate-100/50 font-sans transition-all duration-300">
       {/* Sidebar Desktop */}
       <aside className={cn(
-        "hidden md:flex flex-col bg-slate-900 border-r border-slate-800 transition-all duration-300 relative text-slate-300 shadow-2xl shadow-slate-900/20 z-20",
+        "hidden md:flex flex-col bg-[#0b1120] border-r border-slate-800/60 transition-all duration-300 relative text-slate-300 shadow-[4px_0_24px_rgba(0,0,0,0.2)] z-[60] group/sidebar",
         isCollapsed ? "w-20" : "w-64"
       )}>
         {/* Collapse Toggle Button */}
         <button 
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="absolute -right-3 top-20 w-6 h-6 bg-slate-800 border border-slate-700 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:border-brand-blue hover:bg-brand-blue shadow-sm z-20 transition-all"
+          className="absolute -right-3.5 top-24 -translate-y-1/2 w-7 h-7 bg-[#0b1120] border border-slate-800/60 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:border-brand-blue hover:bg-brand-blue shadow-md z-[100] transition-all opacity-0 group-hover/sidebar:opacity-100 focus:opacity-100"
         >
-          {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          {isCollapsed ? <ChevronRight size={14} strokeWidth={3} /> : <ChevronLeft size={14} strokeWidth={3} />}
         </button>
 
-        <div className={cn("p-6 border-b border-slate-800 h-24 flex items-center transition-all", isCollapsed ? "justify-center px-4" : "gap-4")}>
+        <div className={cn("p-6 border-b border-slate-800/60 h-24 flex items-center transition-all bg-gradient-to-b from-white/[0.02] to-transparent", isCollapsed ? "justify-center px-4" : "gap-4")}>
           <div className={cn(
-            "bg-gradient-to-br from-brand-blue to-blue-600 rounded-xl flex items-center justify-center text-white font-display font-black transition-all shrink-0 shadow-lg shadow-brand-blue/30 border border-blue-500/30",
-            isCollapsed ? "w-10 h-10 text-lg" : "w-12 h-12 text-2xl"
+            "bg-gradient-to-br from-brand-blue to-blue-600 rounded-2xl flex items-center justify-center text-white font-display font-black transition-all shrink-0 shadow-lg shadow-brand-blue/30 border border-blue-400/20",
+            isCollapsed ? "w-10 h-10 text-lg rounded-xl" : "w-12 h-12 text-2xl"
           )}>
             C
           </div>
           {!isCollapsed && (
-            <div className="animate-in fade-in slide-in-from-left-2 duration-300 overflow-hidden whitespace-nowrap">
-              <h1 className="font-display font-black text-white leading-none text-xl tracking-tighter">CANTV</h1>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Gerencia de Datos</p>
+            <div className="animate-in fade-in slide-in-from-left-2 duration-300 overflow-hidden whitespace-nowrap flex flex-col justify-center">
+              <h1 className="font-display font-black text-white leading-none text-2xl tracking-tighter">CANTV <span className="opacity-40 text-[10px] font-mono font-medium align-middle ml-1">v2.6</span></h1>
+              <p className="text-[9px] text-brand-blue font-black uppercase tracking-[0.25em] mt-1 relative left-[1px]">Soporte Datos</p>
             </div>
           )}
         </div>
 
         {/* Scrollable Navigation Area */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden sidebar-scrollbar min-h-0">
-          <nav className="p-4 space-y-2">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden sidebar-scrollbar min-h-0 bg-[#0b1120]">
+          <nav className={cn("space-y-1.5 transition-all", isCollapsed ? "p-3" : "p-4")}>
             {navItems.map((item) => (
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
                 className={cn(
                   "w-full flex items-center rounded-xl transition-all duration-200 group relative",
-                  isCollapsed ? "justify-center p-3" : "gap-3 px-4 py-3",
+                  isCollapsed ? "justify-center p-3" : "gap-3.5 px-4 py-3.5",
                   activeTab === item.id
-                    ? "bg-brand-blue text-white shadow-lg shadow-brand-blue/20"
-                    : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                    ? "bg-brand-blue/10 text-brand-blue border border-brand-blue/20 shadow-[inset_0_1px_0_0_rgba(14,165,233,0.1)]"
+                    : "text-slate-400 hover:bg-white-[0.03] hover:text-slate-200 border border-transparent"
                 )}
               >
-                <item.icon size={20} className="shrink-0" />
-                {!isCollapsed && <span className="font-medium animate-in fade-in slide-in-from-left-1 duration-300">{item.label}</span>}
+                <item.icon size={isCollapsed ? 22 : 20} className={cn("shrink-0 transition-all", activeTab === item.id ? "text-brand-blue drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]" : "text-slate-500 group-hover:text-slate-300")} />
+                {!isCollapsed && <span className={cn("text-sm transition-colors", activeTab === item.id ? "font-bold" : "font-medium")}>{item.label}</span>}
                 
                 {/* Tooltip on collapse */}
                 {isCollapsed && (
-                  <div className="absolute left-full ml-4 px-3 py-1.5 bg-slate-800 border border-slate-700 text-white text-xs font-bold rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
+                  <div className="absolute left-full ml-4 px-3 py-2 bg-slate-800 border border-slate-700 text-white text-xs font-bold rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50 shadow-xl shadow-black/50">
+                    <div className="absolute top-1/2 -left-1 -translate-y-1/2 border-y-4 border-y-transparent border-r-4 border-r-slate-800" />
                     {item.label}
                   </div>
                 )}
@@ -105,20 +106,21 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
           </nav>
         </div>
 
-        <div className="p-4 border-t border-slate-800 bg-slate-900/50 backdrop-blur-md">
+        <div className="p-4 border-t border-slate-800/60 bg-[#0b1120]/80 backdrop-blur-md flex flex-col gap-2 relative z-10">
           <button
             onClick={onLogout}
             className={cn(
               "w-full flex items-center rounded-xl transition-all duration-200 group relative",
-              isCollapsed ? "justify-center p-3" : "gap-3 px-4 py-3",
-              "text-slate-400 hover:bg-red-500/10 hover:text-red-400"
+              isCollapsed ? "justify-center p-3" : "gap-3.5 px-4 py-3",
+              "text-slate-400 hover:bg-red-500/10 hover:text-red-400 border border-transparent hover:border-red-500/20"
             )}
           >
-            <LogOut size={20} className="shrink-0" />
-            {!isCollapsed && <span className="font-medium animate-in fade-in slide-in-from-left-1 duration-300">Cerrar Sesión</span>}
+            <LogOut size={isCollapsed ? 22 : 20} className="shrink-0 transition-colors group-hover:text-red-400 text-slate-500" />
+            {!isCollapsed && <span className="font-semibold text-sm animate-in fade-in slide-in-from-left-1 duration-300">Cerrar Sesión</span>}
             
             {isCollapsed && (
-              <div className="absolute left-full ml-4 px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
+              <div className="absolute left-full ml-4 px-3 py-2 bg-red-600 text-white text-xs font-bold rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50 shadow-xl shadow-red-900/50">
+                <div className="absolute top-1/2 -left-1 -translate-y-1/2 border-y-4 border-y-transparent border-r-4 border-r-red-600" />
                 Cerrar Sesión
               </div>
             )}
@@ -129,65 +131,87 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header */}
-        <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-50 shadow-sm transition-all">
+        <header className="h-auto min-h-[4.5rem] py-3 lg:py-0 lg:h-20 bg-white border-b border-slate-200 flex flex-wrap lg:flex-nowrap gap-3 lg:gap-4 items-center justify-between px-3 lg:px-6 sticky top-0 z-50 shadow-sm transition-all relative">
           <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-brand-blue/40 via-brand-blue to-brand-blue/40" />
-          <div className="flex items-center gap-4">
+          
+          {/* Left: Title & Date (Order 1) */}
+          <div className="flex items-center gap-2 lg:gap-4 shrink-0 order-1">
             <button
-              className="md:hidden p-2.5 text-slate-600 bg-white shadow-sm border border-slate-200 rounded-xl"
+              className="md:hidden p-2 text-slate-600 bg-white shadow-sm border border-slate-200 rounded-xl shrink-0"
               onClick={() => setIsMobileMenuOpen(true)}
             >
-              <Menu size={20} />
+              <Menu size={18} />
             </button>
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-display font-black text-slate-800 tracking-tight uppercase">
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <h2 className="text-base lg:text-xl font-display font-black text-slate-800 tracking-tight uppercase truncate">
                   {navItems.find(i => i.id === activeTab)?.label || activeTab}
                 </h2>
-                <span className="hidden lg:inline-flex px-1.5 py-0.5 bg-slate-100 text-[8px] font-black text-slate-400 rounded border border-slate-200 tracking-widest translate-y-[-1px]">V1.0.4-LTS</span>
               </div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                {new Intl.DateTimeFormat('es-VE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}).format(new Date())}
+              <p className="text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest truncate leading-tight mt-0.5">
+                <span className="hidden xl:inline">
+                  {new Intl.DateTimeFormat('es-VE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}
+                </span>
+                <span className="hidden sm:inline xl:hidden">
+                  {new Intl.DateTimeFormat('es-VE', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date())}
+                </span>
+                <span className="inline sm:hidden">
+                  {new Intl.DateTimeFormat('es-VE', { day: '2-digit', month: '2-digit', year: '2-digit' }).format(new Date())}
+                </span>
               </p>
             </div>
           </div>
 
-          {/* Technical Info Bar - Essential for Dedicated Systems */}
-          <div className="hidden xl:flex items-center gap-8 px-8 py-2.5 bg-slate-50/50 border border-slate-200 rounded-[1.25rem] shadow-inner shadow-slate-200/50">
-            <div className="flex flex-col">
-              <span className="text-[8px] font-black text-slate-400 uppercase tracking-[0.15em] mb-0.5">Sede Operativa</span>
-              <span className="text-[10px] font-bold text-slate-700 tracking-tight">CENTRAL MARACAY 4357</span>
-            </div>
-            <div className="w-[1px] h-6 bg-slate-200" />
-            <div className="flex flex-col">
-              <span className="text-[8px] font-black text-slate-400 uppercase tracking-[0.15em] mb-0.5">Unidad Organizativa</span>
-              <span className="text-[10px] font-bold text-slate-700 tracking-tight">DATOS Y TRANSMISIÓN</span>
-            </div>
-            <div className="w-[1px] h-6 bg-slate-200" />
-            <div className="flex items-center gap-2.5 bg-white px-3 py-1 rounded-lg border border-slate-200 shadow-sm">
-              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse-slow shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
-              <span className="text-[9px] font-black text-emerald-600 uppercase tracking-[0.25em]">Sincronizado</span>
+          {/* Center: Technical Info Bar (Order 3 on mobile, Order 2 on desktop) */}
+          <div className="hidden md:flex items-center justify-center min-w-0 flex-1 order-3 md:order-2 mt-1 md:mt-0">
+            <div className="flex items-center gap-1.5 lg:gap-2.5 xl:gap-4 px-2 xl:px-4 py-1.5 bg-slate-50 border border-slate-200 rounded-full shadow-sm shadow-slate-100 min-w-0 max-w-full transition-all">
+              <div className="flex items-center gap-1.5 shrink min-w-0">
+                <MapPin size={11} className="text-slate-400 shrink-0" />
+                <div className="flex items-baseline gap-1 min-w-0">
+                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest hidden xl:inline shrink-0">Sede:</span>
+                  <span className="text-[9px] lg:text-[10px] font-bold text-slate-700 truncate max-w-[70px] sm:max-w-[120px] md:max-w-[80px] lg:max-w-[110px] xl:max-w-none">CENTRAL MARACAY 4357</span>
+                </div>
+              </div>
+              <div className="w-[1px] h-3.5 bg-slate-200 shrink-0" />
+              <div className="flex items-center gap-1.5 shrink min-w-0">
+                <Server size={11} className="text-slate-400 shrink-0" />
+                <div className="flex items-baseline gap-1 min-w-0">
+                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest hidden xl:inline shrink-0">Unidad:</span>
+                  <span className="text-[9px] lg:text-[10px] font-bold text-slate-700 truncate max-w-[70px] sm:max-w-[120px] md:max-w-[80px] lg:max-w-[110px] xl:max-w-none">DATOS Y TRANSMISIÓN</span>
+                </div>
+              </div>
+              <div className="w-[1px] h-3.5 bg-slate-200 shrink-0" />
+              <div className="flex items-center gap-1 bg-white px-1.5 py-0.5 rounded-lg border border-slate-200 shadow-sm shrink-0">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse-slow shadow-[0_0_8px_rgba(16,185,129,0.4)] shrink-0" />
+                <span className="text-[8px] font-black text-emerald-600 uppercase tracking-widest whitespace-nowrap hidden lg:inline">
+                  Sincronizado
+                </span>
+                <span className="text-[8px] font-black text-emerald-600 uppercase tracking-widest whitespace-nowrap inline lg:hidden">
+                  Sync
+                </span>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-6">
-            <div className="relative">
+          {/* Right: Notifications & Profile (Order 2 on mobile, Order 3 on desktop) */}
+          <div className="flex items-center justify-end gap-2 lg:gap-4 shrink-0 order-2 md:order-3 w-auto">
+            <div className="relative shrink-0">
               <button 
                 onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
                 className={cn(
-                  "p-2 sm:p-2.5 text-slate-400 hover:text-brand-blue transition-colors relative rounded-xl hover:bg-brand-blue/5 border border-transparent hover:border-brand-blue/10",
+                  "p-2 text-slate-400 hover:text-brand-blue transition-colors relative rounded-xl hover:bg-brand-blue/5 border border-transparent hover:border-brand-blue/10 flex items-center justify-center",
                   isNotificationsOpen && "bg-brand-blue/10 text-brand-blue border-brand-blue/20",
                   hasCriticalUnread && !isNotificationsOpen && "bg-red-50 text-brand-red animate-pulse border-brand-red/20 shadow-sm shadow-brand-red/10"
                 )}
               >
-                <Bell size={20} className={cn(unreadCount > 0 && "animate-swing origin-top", hasCriticalUnread && "text-brand-red")} />
+                <Bell size={18} className={cn("lg:w-5 lg:h-5", unreadCount > 0 && "animate-swing origin-top", hasCriticalUnread && "text-brand-red")} />
                 {unreadCount > 0 && (
                   <span className={cn(
-                    "absolute top-2 right-2 w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm",
-                    hasCriticalUnread ? "bg-brand-red animate-ping" : "bg-brand-blue"
-                  )}></span>
-                )}
-                {unreadCount > 0 && hasCriticalUnread && (
-                  <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-brand-red rounded-full border-2 border-white"></span>
+                    "absolute -top-1 -right-1 min-w-[16px] h-[16px] lg:min-w-[18px] lg:h-[18px] flex items-center justify-center rounded-full border-2 border-white shadow-sm px-1 text-[8px] font-black leading-none text-white",
+                    hasCriticalUnread ? "bg-brand-red animate-pulse" : "bg-brand-blue"
+                  )}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
                 )}
               </button>
               
@@ -206,27 +230,27 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
               )}
             </div>
             
-            <div className="h-8 w-px bg-slate-200 hidden min-[480px]:block"></div>
+            <div className="h-6 lg:h-8 w-px bg-slate-200 hidden sm:block shrink-0"></div>
             
-            <div className="relative">
+            <div className="relative shrink-0">
               <button 
                 onClick={() => setIsProfileOpen(!isProfileOpen)}
                 className={cn(
-                  "flex items-center gap-3 bg-white pl-4 pr-1.5 py-1.5 rounded-full border border-slate-200/60 shadow-sm shadow-slate-200/20 max-w-[120px] sm:max-w-none transition-all hover:bg-slate-50",
+                  "flex items-center gap-2 lg:gap-3 bg-white pl-2 lg:pl-3 pr-1 lg:pr-1.5 py-1 lg:py-1.5 rounded-full border border-slate-200/60 shadow-sm shadow-slate-200/20 transition-all hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-brand-blue/10 max-w-[160px] lg:max-w-[240px]",
                   isProfileOpen && "border-brand-blue/30 ring-4 ring-brand-blue/5 bg-slate-50"
                 )}
               >
-                <div className="text-right hidden sm:block">
-                  <p className="text-xs font-bold text-slate-900 leading-tight truncate max-w-[100px]">{user?.displayName || 'Usuario'}</p>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                <div className="text-right hidden lg:flex flex-col items-end justify-center min-w-0 mr-1 max-w-[90px] xl:max-w-[140px]">
+                  <p className="text-xs font-bold text-slate-900 leading-tight truncate w-full">{user?.displayName || 'Usuario'}</p>
+                  <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest whitespace-nowrap truncate w-full mt-0.5">
                     {user?.role === 'admin' ? 'Admin General' : user?.role === 'supervisor' ? 'Usu. Administrador' : 'Técnico'}
                   </p>
                 </div>
-                <div className="w-8 h-8 sm:w-9 sm:h-9 bg-brand-blue rounded-full flex items-center justify-center text-white shadow-inner shrink-0 overflow-hidden border border-slate-200">
+                <div className="w-8 h-8 lg:w-9 lg:h-9 bg-brand-blue rounded-full flex items-center justify-center text-white shadow-inner shrink-0 overflow-hidden border border-slate-200">
                   {user?.photoURL ? (
                     <img src={user.photoURL} alt={user.displayName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
-                    <User size={16} />
+                    <User size={14} className="lg:w-4 lg:h-4" />
                   )}
                 </div>
               </button>
@@ -323,38 +347,54 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
           </div>
           
           {/* Main Footer */}
-          <footer className="mt-auto border-t border-slate-200/60 bg-white/50 px-6 py-4 backdrop-blur-sm">
-             <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
-                 <div className="flex items-center gap-2 text-slate-500">
-                    <span className="font-display font-black text-brand-blue tracking-tight">CANTV</span>
-                    <span className="text-xs font-medium">© {new Date().getFullYear()} Gerencia de Datos y Transmisión. Todos los derechos reservados.</span>
-                 </div>
-                 <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest flex items-center gap-4">
-                   <span>Sistema de Gestión Inteligente</span>
-                   <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
-                   <span>V 2.1.0</span>
-                 </div>
-             </div>
+          <footer className="mt-auto border-t border-slate-200 bg-white/80 px-6 py-6 backdrop-blur-md">
+            <div className="max-w-7xl mx-auto">
+              {/* Bottom Brand Corporate Bar */}
+              <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-display font-black text-brand-blue tracking-tighter text-sm uppercase">CANTV</span>
+                    <div className="w-1.5 h-1.5 rounded-full bg-slate-350" />
+                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">
+                      Compañía Anónima Nacional Teléfonos de Venezuela
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-medium font-sans">
+                    Gerencia General de Tecnología y Operaciones · © {new Date().getFullYear()} Dirección de Soporte de Transmisión y Datos. Todos los derechos reservados.
+                  </p>
+                </div>
+                
+                <div className="flex items-center gap-2 sm:gap-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest bg-slate-100/80 px-3 py-2 rounded-2xl border border-slate-200 w-fit">
+                  <span className="text-brand-blue whitespace-nowrap">SISTEMA CONTROL DE LABORES</span>
+                  <div className="w-1 h-1 bg-slate-300 rounded-full hidden sm:block shrink-0" />
+                  <span className="bg-brand-blue text-white font-mono px-2 py-0.5 rounded-md text-[8px] sm:text-[9px] shrink-0 whitespace-nowrap">v2.6.0 PROD</span>
+                </div>
+              </div>
+            </div>
           </footer>
         </div>
       </main>
 
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
-        <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}></div>
-          <aside className="absolute inset-y-0 left-0 w-72 bg-slate-900 shadow-2xl flex flex-col">
-            <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+        <div className="fixed inset-0 z-[100] md:hidden">
+          <div className="absolute inset-0 bg-[#0b1120]/80 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsMobileMenuOpen(false)}></div>
+          <aside className="absolute inset-y-0 left-0 w-64 bg-[#0b1120] border-r border-slate-800/60 shadow-[4px_0_24px_rgba(0,0,0,0.2)] flex flex-col animate-in slide-in-from-left duration-300 z-[110]">
+            <div className="p-5 border-b border-slate-800/60 flex items-center justify-between h-20 bg-gradient-to-b from-white/[0.02] to-transparent">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-brand-blue rounded flex items-center justify-center text-white font-bold">C</div>
-                <h1 className="font-bold text-white tracking-tight">CANTV</h1>
+                <div className="w-10 h-10 bg-gradient-to-br from-brand-blue to-blue-600 rounded-xl flex items-center justify-center text-white font-display font-black shadow-lg shadow-brand-blue/20 border border-blue-400/20 text-xl">C</div>
+                <div className="flex flex-col justify-center">
+                  <h1 className="font-display font-black text-white leading-none text-xl tracking-tighter">CANTV</h1>
+                  <p className="text-[9px] text-brand-blue font-black uppercase tracking-[0.2em] mt-1">Soporte Datos</p>
+                </div>
               </div>
-              <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 text-slate-400 hover:text-white">
-                <X size={24} />
+              <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 text-slate-400 hover:text-white bg-white/[0.03] rounded-full hover:bg-white/10 transition-colors">
+                <X size={20} />
               </button>
             </div>
+            
             <div className="flex-1 overflow-y-auto overflow-x-hidden sidebar-scrollbar min-h-0">
-              <nav className="p-4 space-y-2">
+              <nav className="p-4 space-y-1.5">
                 {navItems.map((item) => (
                   <button
                     key={item.id}
@@ -363,24 +403,24 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
                       setIsMobileMenuOpen(false);
                     }}
                     className={cn(
-                      "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all",
-                      activeTab === item.id ? "bg-brand-blue text-white shadow-lg shadow-brand-blue/20" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                      "w-full flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all",
+                      activeTab === item.id ? "bg-brand-blue/10 text-brand-blue border border-brand-blue/20 shadow-[inset_0_1px_0_0_rgba(14,165,233,0.1)]" : "text-slate-400 hover:bg-white/[0.03] hover:text-slate-200 border border-transparent"
                     )}
                   >
-                    <item.icon size={20} />
-                    <span className="font-medium">{item.label}</span>
+                    <item.icon size={22} className={cn("transition-colors shrink-0", activeTab === item.id ? "text-brand-blue" : "text-slate-500")} />
+                    <span className={cn("text-sm", activeTab === item.id ? "font-bold" : "font-medium")}>{item.label}</span>
                   </button>
                 ))}
               </nav>
             </div>
 
-            <div className="p-4 border-t border-slate-800 bg-slate-900/50 backdrop-blur-md">
+            <div className="p-4 border-t border-slate-800/60 bg-[#0b1120]/80">
               <button
                 onClick={onLogout}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all font-bold"
+                className="w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-slate-400 hover:bg-red-500/10 hover:text-red-400 border border-transparent hover:border-red-500/20 transition-all"
               >
-                <LogOut size={20} />
-                <span className="font-medium">Cerrar Sesión</span>
+                <LogOut size={22} className="shrink-0 text-slate-500 group-hover:text-red-400" />
+                <span className="font-semibold text-sm">Cerrar Sesión</span>
               </button>
             </div>
           </aside>

@@ -87,13 +87,13 @@ service cloud.firestore {
       allow get: if isValidId(techId) && isSignedIn();
       allow list: if isSignedIn();
       
-      allow create: if isValidId(techId) && isAdmin() && isValidTechnician(incoming());
+      allow create: if isValidId(techId) && isManager() && isValidTechnician(incoming());
       
-      allow update: if isValidId(techId) && isAdmin() && isValidTechnician(incoming()) &&
+      allow update: if isValidId(techId) && isManager() && isValidTechnician(incoming()) &&
                     ( (!('createdAt' in existing()) && !('createdAt' in incoming())) || 
                       (incoming().createdAt == existing().createdAt) );
                     
-      allow delete: if isAdmin();
+      allow delete: if isManager();
     }
 
     // ------------------------------------------------------------------------
@@ -121,6 +121,8 @@ service cloud.firestore {
              (!('startTime' in data) || data.startTime is string) &&
              (!('endTime' in data) || data.endTime is string) &&
              (!('incidentNumber' in data) || data.incidentNumber is string) &&
+             (!('code' in data) || data.code is string) &&
+             (!('cause' in data) || data.cause is string) &&
              (!('fleet' in data) || data.fleet is string);
     }
 

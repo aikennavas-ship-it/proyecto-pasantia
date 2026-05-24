@@ -184,10 +184,23 @@ export default function App() {
         let profile: UserProfile;
         if (docSnap.exists()) {
           profile = docSnap.data() as UserProfile;
-          if (profile.role !== targetRole || (techName && profile.displayName !== techName)) {
+          let needsUpdate = false;
+          let updatedFields: Partial<UserProfile> = {};
+          
+          if (profile.role !== targetRole) {
             profile.role = targetRole as any;
-            if (techName) profile.displayName = techName;
-            await setDoc(docRef, { role: targetRole, displayName: techName || profile.displayName }, { merge: true });
+            updatedFields.role = targetRole as any;
+            needsUpdate = true;
+          }
+          
+          if (techName && !profile.displayName) {
+            profile.displayName = techName;
+            updatedFields.displayName = techName;
+            needsUpdate = true;
+          }
+          
+          if (needsUpdate) {
+            await setDoc(docRef, updatedFields, { merge: true });
           }
         } else {
           profile = {
@@ -447,7 +460,7 @@ export default function App() {
   };
 
   const handleAddTechnician = async (data: any) => {
-    if (!user || !isGeneralAdmin) return;
+    if (!user || !isManager) return;
     const { password, ...firestoreData } = data;
     
     try {
@@ -499,6 +512,31 @@ export default function App() {
         updatedAt: Timestamp.now(),
       }, { merge: true });
       
+      let notificationMsg = `Personal editado: ${firestoreData.name}`;
+      if (password) {
+        try {
+          // If a new password was provided, we auto-trigger a recovery email so they can transition or update safely
+          await sendPasswordResetEmailHook(firestoreData.email);
+          notificationMsg += ` (Enlace de seguridad enviado)`;
+          alert(`Cambios guardados con éxito para ${firestoreData.name}. Nota de seguridad: Por políticas de Firebase, las contraseñas de otros usuarios no se reescriben directamente. Se ha enviado un enlace de restauración de acceso seguro a ${firestoreData.email}.`);
+        } catch (pwErr) {
+          console.warn("Falla de restauración:", pwErr);
+          alert(`Cambios de perfil guardados con éxito para ${firestoreData.name}.`);
+        }
+      } else {
+        alert(`Cambios de perfil guardados con éxito para ${firestoreData.name}.`);
+      }
+      
+      await addDoc(collection(db, 'notifications'), {
+        userId: user.uid,
+        userName: userProfile?.displayName || user.email,
+        type: 'tech_edit',
+        message: notificationMsg,
+        relatedId: editingTechnician.id,
+        createdAt: Timestamp.now(),
+        readBy: [user.uid]
+      });
+
       setEditingTechnician(null);
     } catch (err: any) {
       console.error("Error editing technician:", err);
@@ -509,8 +547,8 @@ export default function App() {
   const handleDelete = async () => {
     if (!confirmDelete) return;
 
-    if (confirmDelete.type === 'technician' && !isGeneralAdmin) {
-      alert("Acceso denegado: Solo el Administrador General puede dar de baja a técnicos.");
+    if (confirmDelete.type === 'technician' && !isManager) {
+      alert("Acceso denegado: Solo un Supervisor o Administrador puede dar de baja a miembros del personal.");
       setConfirmDelete(null);
       return;
     }
@@ -535,12 +573,30 @@ export default function App() {
           return;
         }
         await deleteDoc(doc(db, collectionName, confirmDelete.id));
+        
+        await addDoc(collection(db, 'notifications'), {
+          userId: user?.uid,
+          userName: userProfile?.displayName || user?.email,
+          type: 'deleted_permanently',
+          message: `Eliminación permanente de ${confirmDelete.type === 'activity' ? 'labor' : 'personal'}.`,
+          createdAt: Timestamp.now(),
+          readBy: [user?.uid].filter(Boolean)
+        });
       } else {
         await setDoc(doc(db, collectionName, confirmDelete.id), {
           isDeleted: true,
           deletedAt: Timestamp.now(),
           ...(collectionName === 'activities' && !confirmDelete.title ? { title: 'Actividad' } : {})
         }, { merge: true });
+
+        await addDoc(collection(db, 'notifications'), {
+          userId: user?.uid,
+          userName: userProfile?.displayName || user?.email,
+          type: 'moved_to_trash',
+          message: `${confirmDelete.type === 'activity' ? 'Labor movida' : 'Personal movido'} a la papelera: ${confirmDelete.title || 'Desconocido'}`,
+          createdAt: Timestamp.now(),
+          readBy: [user?.uid].filter(Boolean)
+        });
       }
       
       setConfirmDelete(null);
@@ -870,13 +926,39 @@ export default function App() {
     return (
       <Login 
         onLogin={async (email, pass) => {
-          const res = await signInWithEmailAndPassword(email, pass);
-          if (!res) {
-            // Si falla el login (ej: usuario de prueba no existe), intentamos crearlo
-            await registerNewUser(email, pass);
+          try {
+            const res = await signInWithEmailAndPassword(email, pass);
+            if (!res) {
+              // Si falla el login (ej: usuario de prueba no existe), intentamos crearlo
+              await registerNewUser(email, pass);
+            } else {
+              // Add a notification for login
+              addDoc(collection(db, 'notifications'), {
+                type: 'auth_login',
+                userId: res.user.uid,
+                userName: res.user.displayName || email,
+                message: `El usuario ${email} ha iniciado sesión en el sistema.`,
+                createdAt: Timestamp.now(),
+                readBy: []
+              });
+            }
+          } catch (e) {
+            console.error("Login notification error:", e);
           }
         }} 
-        onRegister={(email, pass) => registerNewUser(email, pass)}
+        onRegister={async (email, pass) => {
+          const res = await registerNewUser(email, pass);
+          if (res) {
+            addDoc(collection(db, 'notifications'), {
+              type: 'auth_register',
+              userId: res.user.uid,
+              userName: email,
+              message: `Nuevo usuario registrado: ${email}.`,
+              createdAt: Timestamp.now(),
+              readBy: []
+            });
+          }
+        }}
         onForgotPassword={async (email) => {
           const success = await sendPasswordResetEmailHook(email);
           if (success) {
@@ -934,9 +1016,9 @@ export default function App() {
       {activeTab === 'technicians' && (
         <TechnicianManagement 
           technicians={technicians || []} 
-          onAddTechnician={isGeneralAdmin ? handleAddTechnician : undefined}
-          onEditTechnician={isGeneralAdmin ? ((tech) => setEditingTechnician(tech)) : undefined}
-          onDeleteTechnician={isGeneralAdmin ? ((id, title) => setConfirmDelete({ type: 'technician', id, title })) : undefined}
+          onAddTechnician={isManager ? handleAddTechnician : undefined}
+          onEditTechnician={isManager ? ((tech) => setEditingTechnician(tech)) : undefined}
+          onDeleteTechnician={isManager ? ((id, title) => setConfirmDelete({ type: 'technician', id, title })) : undefined}
           isLoading={techniciansLoading}
         />
       )}
@@ -960,41 +1042,47 @@ export default function App() {
       )}
 
       {activeTab === 'settings' && (
-        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="glass-card p-8 max-w-4xl mx-auto border-none shadow-2xl">
-            <div className="flex items-center justify-between gap-4 mb-10 pb-6 border-b border-slate-100">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 bg-brand-blue/10 rounded-2xl flex items-center justify-center text-brand-blue shadow-inner">
-                  <Settings size={32} />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-display font-black text-slate-900 tracking-tight uppercase">Configuración Personalizada</h3>
-                  <p className="text-sm text-slate-500 font-bold uppercase tracking-widest">Gestión de identidad y preferencias del sistema</p>
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-4xl mx-auto">
+          {/* Standalone Header Card matching others */}
+          <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 bg-white p-6 rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02),0_15px_35px_rgba(0,0,0,0.06)] border border-slate-200">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full xl:w-auto">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-brand-blue to-blue-600 rounded-3xl flex items-center justify-center text-white shadow-lg shadow-brand-blue/15 shrink-0">
+                <Settings size={26} className="sm:size-7" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-lg sm:text-xl font-display font-black text-slate-900 tracking-tight uppercase truncate">Configuración Personalizada</h2>
+                <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Gestión de identidad y preferencias del sistema</p>
+                  <div className="hidden sm:block w-1.5 h-1.5 rounded-full bg-slate-300" />
+                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-1">
+                    Central Maracay 4357
+                  </p>
                 </div>
               </div>
-              {isGeneralAdmin && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (window.confirm("¿Seguro que desea generar información de prueba en la base de datos?")) {
-                      try {
-                        const { seedDummyData } = await import('./lib/seedDummyData');
-                        await seedDummyData(user?.uid || '');
-                        alert('Data de prueba insertada. Recargue la página para verla');
-                      } catch (err) {
-                        console.error(err);
-                        alert('Error');
-                      }
-                    }
-                  }}
-                  className="bg-brand-blue/10 text-brand-blue hover:bg-brand-blue/20 font-bold py-2 px-4 rounded-xl transition-all flex items-center gap-2"
-                >
-                  <Database size={16} /> Data Dummy
-                </button>
-              )}
             </div>
+            {isGeneralAdmin && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (window.confirm("¿Seguro que desea generar información de prueba en la base de datos?")) {
+                    try {
+                      const { seedDummyData } = await import('./lib/seedDummyData');
+                      await seedDummyData(user?.uid || '');
+                      alert('Data de prueba insertada. Recargue la página para verla');
+                    } catch (err) {
+                      console.error(err);
+                      alert('Error');
+                    }
+                  }
+                }}
+                className="w-full xl:w-auto bg-brand-blue/10 text-brand-blue hover:bg-brand-blue/20 font-black text-xs uppercase tracking-widest py-2.5 px-5 rounded-2xl transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+              >
+                <Database size={16} /> Data Dummy
+              </button>
+            )}
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+          <div className="glass-card p-8 border-none shadow-2xl max-w-xl mx-auto">
               {/* User Section */}
               <div className="space-y-8">
                 <div>
@@ -1045,7 +1133,7 @@ export default function App() {
 
                     <div className="space-y-4">
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nombre para mostrar</label>
+                        <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest ml-1">Nombre para mostrar</label>
                         <input 
                           type="text"
                           value={profileForm.displayName}
@@ -1057,7 +1145,7 @@ export default function App() {
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">URL de la Imagen</label>
+                        <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest ml-1">URL de la Imagen</label>
                         <input 
                           type="url"
                           value={profileForm.photoURL}
@@ -1108,48 +1196,6 @@ export default function App() {
                   </div>
                 </div>
               </div>
-
-              {/* Institutional Section */}
-              <div className="space-y-6">
-                <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Marco del Proyecto (UNEFA)</h4>
-                <div className="space-y-4">
-                  <div className="flex gap-4 p-4 rounded-2xl hover:bg-slate-50 transition-colors">
-                    <div className="shrink-0 w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center text-orange-600">
-                      <Target size={20} />
-                    </div>
-                    <div>
-                      <h5 className="text-sm font-bold text-slate-800 mb-1">Misión</h5>
-                      <p className="text-xs text-slate-500 leading-relaxed italic">"CANTV es la empresa estratégica del Estado... capaz de servir con calidad, eficiencia y eficacia..."</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-4 p-4 rounded-2xl hover:bg-slate-50 transition-colors">
-                    <div className="shrink-0 w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600">
-                      <Eye size={20} />
-                    </div>
-                    <div>
-                      <h5 className="text-sm font-bold text-slate-800 mb-1">Visión</h5>
-                      <p className="text-xs text-slate-500 leading-relaxed italic">"Ser una empresa socialista operadora y proveedora de soluciones integrales... reconocida por su capacidad innovadora..."</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-4 p-4 rounded-2xl hover:bg-slate-50 transition-colors">
-                    <div className="shrink-0 w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-brand-blue">
-                      <ShieldCheck size={20} />
-                    </div>
-                    <div>
-                      <h5 className="text-sm font-bold text-slate-800 mb-1">Valores</h5>
-                      <p className="text-xs text-slate-500 leading-relaxed">Ética socialista, Honestidad, Solidaridad, Esfuerzo Colectivo.</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-8 pt-6 border-t border-slate-100">
-                  <p className="text-[10px] text-slate-400 font-bold uppercase mb-2">Ubicación Estratégica</p>
-                  <div className="bg-slate-900 rounded-2xl p-4 text-white">
-                    <p className="text-xs font-medium text-white/70 italic">Central 4357 - Casco Central Maracay, Aragua. Calle 100 con Av. Miranda.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       )}

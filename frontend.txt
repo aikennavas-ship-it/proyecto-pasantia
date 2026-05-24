@@ -1,0 +1,233 @@
+================================================================================
+           RESUMEN INTEGRAL Y ESPECÍFICO DE LA ENTRADA VISUAL (FRONTEND)
+                   SISTEMA DE GESTIÓN DE HORAS EXTRAS Y PLANIFICACIÓN
+================================================================================
+
+Este documento contiene una descripción minuciosa y pormenorizada de la interfaz de
+usuario (Frontend), detallando cada módulo, cada botón, cada contenedor flotante,
+animaciones, microinteracciones, comportamientos responsivos y lógica visual.
+
+--------------------------------------------------------------------------------
+1. ARQUITECTURA VISUAL, PALETA DE COLORES Y TIPOGRAFÍA
+--------------------------------------------------------------------------------
+
+El frontend está desarrollado bajo el paradigma de componentes declarativos de React,
+utilizando un diseño estéticamente impecable inspirado en la identidad institucional y 
+normas operativas de CANTV:
+
+- Paleta de Colores Exclusiva:
+  * Azul Institucional Principal (Brand Blue - #004a99): Transmite solidez y formalidad.
+  * Rojo de Emergencia (Brand Red - #e30613): Usado para alertas críticas, excesos de jornadas, 
+    o eliminaciones.
+  * Gris Carbón Profundo (Slate - de #0f172a a #64748b): Enmarca los textos primarios y secundarios, 
+    ofreciendo un excelente contraste con fondos limpios.
+  * Emerald/Verde Oliva (Emerald - #10b981): Se emplea para denotar estados conformes, 
+    sobretiempos acumulados, y botones de confirmación sin impacto destructivo.
+- Tipografía y Jerarquía Visual:
+  * Tipografía Primaria ("Inter"): Letra sans-serif altamente legible para todos los textos, 
+    números de tablas, etiquetas de formularios y descripciones.
+  * Tipografía Script/Mono ("JetBrains Mono"): Usada para mostrar códigos de flota, números de 
+    incidente (INC-XXXX) e identificaciones de empleados (P00XXXX). Proporciona un acabado técnico.
+  * Tamaños de Texto Adaptativos: Variaciones desde texto enano ([9px] o [10px] en negrita 
+    y mayúsculas para etiquetas de control) hasta encabezados prominentes para llamar la atención.
+- Animaciones y Microinteracciones (CSS / Tailwind & Framer Motion):
+  * Efectos de Transición: Alertas flotantes y modales utilizan transiciones suaves de entrada 
+    (fade-in y zoom-in-95) y salidas fluidas.
+  * Efecto "Swing" en la Campana: Cuando existen notificaciones nuevas sin leer, el icono de 
+    la campana de notificaciones realiza una ligera oscilación colgante de atención visual.
+  * Hover Feedback: Todos los botones y tarjetas poseen respuestas táctiles virtuales mediante 
+    cambios de escala ligera (active:scale-[0.98]) y variaciones de opacidad y luminosidad.
+
+--------------------------------------------------------------------------------
+2. DETALLES DE CADA MÓDULO, BOTÓN, INTERACCIÓN Y FUNCIÓN ESPECÍFICA
+--------------------------------------------------------------------------------
+
+================================================================================
+A. BARRA DE NAVEGACIÓN LATERAL (SIDEBAR) Y ESTRUCTURA DE PÁGINA (LAYOUT)
+================================================================================
+La barra lateral es el esqueleto de navegación fijo en ordenadores y se colapsa de forma 
+intuitiva en dispositivos móviles.
+
+- Elementos y Botones de Navegación:
+  * Logotipo CANTV: Encabezado de diseño con el distintivo de la empresa y la identificación de 
+    la división operativa militar central "Central Maracay 4357".
+  * Botón "Panel" (Icono de Dashboard): Redirige a las métricas del sistema. *Solo visible para 
+    Administradores y Supervisores*.
+  * Botón "Actividades" (Icono de Lista/Clipboard): Acceso directo a la planilla digital de control.
+  * Botón "Personal" (Icono de Usuarios): Acceso a la administración de técnicos. *Solo visible para 
+    Administradores y Supervisores*.
+  * Botón "Reportes" (Icono de Descarga/Informe): Panel de consultas masivas. *Solo administradores 
+    y supervisores*.
+  * Botón "Papelera" (Icono de Basurero con Alerta): Abre la bandeja de elementos eliminados de forma 
+    lógica de la base de datos.
+  * Botón "Configuración" (Icono de Engranaje): Permite ver el estatus activo del perfil y el cierre 
+    de sesión.
+- Lógica de Comportamiento:
+  * Roles Condicionales en Frontend: Oculta componentes visuales enteros según el perfil del usuario 
+    cargado en sesión (Técnico simple no puede ver pestañas administrativas, asegurando privacidad).
+
+================================================================================
+B. CAMPANITA DE NOTIFICACIONES Y ALERTA EN TIEMPO REAL
+================================================================================
+Ubicada en la cabecera del Layout para una visibilidad prioritaria.
+
+- Componentes de la Campana:
+  * Icono de Campana Metálica: Animado al recibir eventos.
+  * Globo Indicador Rojo/Azul de Conteo Flotante (Badge): Muestra la acumulación de alertas 
+    pendientes por leer. Si el conteo supera el número 99, el frontend automáticamente lo sustituye 
+    por la cadena compacta "99+" para cuidar el diseño espacial y evitar cortes visuales.
+  * Efecto de Pulso (Animate-Pulse): El globo indicador palpita en rojo vivo si existen incidentes 
+    críticos de fatiga laboral, llamando a la atención prioritaria de recursos humanos.
+- Centro de Notificaciones Desplegable (Panel Lateral Flotante):
+  * Se abre con un suave movimiento deslizante al presionar la campana.
+  * Componentes Internos del Desplegable:
+    - Cabecera: Texto indicativo "Notificaciones de Auditoría" y Botón "Marcar todo como leído" 
+      (limpia instantáneamente el globo indicador en el servidor e inhabilita las llamadas de atención).
+    - Botón de Cierre (Icono de "X"): Cierra el panel.
+    - Listado de Alertas en Tiempo Real: Muestra las últimas 20 notificaciones operadas en Firestore:
+      * Cada notificación cuenta con iconos personalizados y colores distintivos por tipo de labor:
+        - Icono Verde (+) para inserción de nuevas actividades (`activity_add`).
+        - Icono Azul (Lápiz) para modificaciones en la hoja (`activity_edit`).
+        - Icono Gris (Usuario+) para altas de personal técnico (`tech_add`).
+        - Icono Gris (Lápiz) para ediciones de perfiles de técnicos (`tech_edit`).
+        - Icono Rojo (Fuego/Alerta) para reportes de sobretiempo límite por fatiga.
+        - Icono Ámbar (Papelera) para envíos a papelera (`moved_to_trash`).
+        - Icono Rojo Oscuro (Papelera Destructiva) para eliminaciones permanentes (`deleted_permanently`).
+        - Icono Naranja (Reloj) para restauraciones operadas en la papelera (`restore`).
+        - Icono Verde Aqua (Check en verde) para inicios de sesión de supervisores (`auth_login`).
+      * Estampilla de Tiempo Dinámica: Muestra fechas relativas o absolutas calculando la brecha 
+        temporal del suceso.
+
+================================================================================
+C. PANEL DE CONTROL / DASHBOARD (MÉTRICAS Y GRÁFICOS)
+================================================================================
+Ofrece un escaneo visual de la hoja de cálculo traducida a indicadores claves.
+
+- Controles de Filtrado:
+  * Selector de Mes: Menú desplegable circular que permite saltar entre meses.
+  * Selector de Año Continuo: Filtro dinámico capaz de iterar y añadir periodos futuros 
+    automáticamente para acompañar el paso del tiempo en la vida real.
+- Bloque de Tarjetas de Estadísticas (Stat Cards):
+  * Tarjeta "Total Labores", "Personal Activo", "Sobretiempo Acumulado", "Déficit Acumulado", 
+    "Viáticos de Nómina" y "Riesgo de Fatiga".
+  * ACCIÓN AL HACER CLIC EN TARJETA (Métricas con Modal Detallado):
+     Al presionar cualquiera de estas tarjetas, el frontend captura el contexto y abre un modal flotante 
+     con fondo difuminado de cristal templado (backdrop-blur-sm) que detalla pormenorizadamente los datos 
+     detrás de la estadística:
+     - Ej. Al presionar "Personal Activo" despliega una tabla interna con el nombre de cada técnico, 
+       su teléfono organizacional e ID laboral.
+     - Ej. Al presionar "Alerta de Fatiga" muestra qué técnicos alcanzaron el umbral límite de 10 horas semanales.
+- Gráficos Interactivos de Recharts:
+  * Gráfico de Torta/Dona (Especialidad Operada): Muestra sectores asignados por color (Azul, Rojo, Verde, 
+    etc.) con tooltips al pasar el puntero que explican la ponderación exacta del departamento.
+  * Gráfico de Barras Columnar (Mayor Participación): Muestra un ranking horizontal o vertical interactivo 
+    de los reportes ejecutados por el personal de la empresa.
+
+================================================================================
+D. HOJA DE ACTIVIDADES (SMART SPREADSHEET INTERACTIVA)
+================================================================================
+Emula una planilla de Microsoft Excel u Hoja de Cálculo de Google, con esteroides web.
+
+- Sección de Cabecera y Controles:
+  * Selector de Vista Temporal Dual:
+    - Botón "Día Actual": Configura la tabla para renderizar sólo actividades del día seleccionado.
+    - Botón "Semana": Configura la tabla para expandir visualmente el filtrado a los 7 días correspondientes.
+  * Selector de Fecha Rápido (Calendario Compacto):
+    - Botones Flecha Izquierda / Derecha: Adelantan o retrasan el día activado en un paso.
+    - Bloque Desplegable de 3 columnas de control para saltar rápidamente a cualquier Día, Mes o Año 
+      de forma interactiva.
+- Estadísticas Consolidadas Rápidas en Hoja:
+  * Barra horizontal oscura que muestra un balance numérico resumido de las horas trabajadas en el rango:
+    - Total de Horas Trabajadas.
+    - Horas Extras Totales.
+    - Déficits Acumulados.
+    - Tarjeta Roja Fuerte de Alerta "Jornada > 10h":
+      * Muestra un conteo nítido de técnicos que violaron la jornada saludable legal.
+      * ACCIÓN CLIC: Abre un modal exclusivo con estructura de tabla limpia que identifica al técnico infractor, 
+        la fecha de ocurrencia del exceso de horas y el título del incidente que generó la jornada extendida.
+- Botones Permanentes de Gestión de Planilla:
+  * Botón "Agregar Reporte / Nueva Actividad" (Icono de Más +): Permite desplegar el gran formulario técnico.
+  * Botón "Plan Semanal" (Descarga Excel de Planificación): Ejecuta un script del cliente que recorre la base 
+    de datos y genera una estructura matricial cruzada con firmas vacías y "X" estilizadas por técnico.
+  * Botón "ST Semanal" (Descarga Excel de Declaración de Horas Extras): Exporta el listado del rango para entrega de nómina.
+- Tabla Maestra Adaptativa:
+  * Columnas con ordenamiento activado al hacer clic en el encabezado (Ordena por fecha, incidentes, flota, etc.).
+  * Renderizado de Técnicos en Células con Chips Visuales con el código P00 integrado y foto o avatar identificativo.
+  * Columnas en formato estricto: Entrada Mañana, Salida Mañana, Almuerzo, Entrada Tarde, Salida Tarde, Horas Totanas, 
+    Manejo de Flota, Importe de Viático, Justificación del Evento y Botones Rápidos de Operaciones.
+  * Filas Fantasma (Grid Skeletons): Rellena las celdas vacías con renglones semi-transparentes para mantener la armonía 
+    de planilla vacía clásica de oficina si no hay registros cargados.
+
+================================================================================
+E. FORMULARIO DE REPORTE TÉCNICO (ACTIVIDAD)
+================================================================================
+Panel de entrada estructurado para la captura del trabajo de campo.
+
+- Campos de Captura:
+  * Título de la Labor (Input): Texto del incidente o tarea.
+  * Descripción Detallada (Textarea): Bitácora técnica ampliada de la labor.
+  * Número de Incidente (Input): Formatea automáticamente el texto al escribir agregando guiones 
+    para cumplir con las directrices estructuradas de CANTV (ej. INC-2026-05-XXXX).
+  * Flota Vehicular (Input): Código de unidad de transporte de la labor.
+  * Bloques Operativos Horarios de Trabajo Múltiple:
+    - Entrada Mañana (Selector de Tiempo) / Salida Mañana (Selector de Tiempo).
+    - Interruptor "Toma Pausa de Almuerzo/Descanso" ("SI" o "NO" mediante interruptor responsivo).
+    - Entrada Tarde / Salida Tarde.
+  * Bloque de Viáticos de Alimentación:
+    - Switch interactivo para habilitar viáticos. Al encenderse, se activa dinámicamente el input numérico 
+      para rellenar el Monto de Viático Estimado. Si se apaga, se oculta el input de dinero y el monto se formatea.
+  * Label Informativa y Bloque de Selección de Técnicos Colaboradores:
+    - Muestra la lista de personal activo en formato de botones para selección múltiple con un simple toque.
+    - Al tocar un técnico, cambia su fondo a azul fuerte e ingresa su nombre al arreglo de "Participantes".
+    - El formulario bloquea el botón de envío si no se selecciona al menos a un participante operativo.
+  * Bloque Dinámico de Sobretiempo o Déficit de Horas:
+    - El formulario calcula en tiempo real con cada pulsación de tecla el total de horas operadas.
+    - Si las horas superan la jornada ordinaria o si decaen por debajo de ésta, el sistema despliega un 
+      bloque visual llamativo solicitando de manera **obligatoria** rellenar el justificativo operativo.
+    - Si la jornada de tiempos es exactamente de 8 horas regulares, el sistema inhabilita este bloque 
+      de descripción de justicativo y coloca automáticamente la etiqueta plana: *"Jornada estándar sin sobretiempo ni déficit."*.
+- Botón "Confirmar Reporte Técnico / Guardar Cambios": Realiza validaciones estrictas en el lado del cliente y envía los datos.
+- Botón "Cancelar": Desecha los cambios y cierra el modal de forma limpia.
+
+================================================================================
+F. PANEL DE PLANILLAS Y REPORTES OPERATIVOS (REPORT GENERATOR)
+================================================================================
+Focalizado en la extracción consolidada de periodos de auditoría administrativa.
+
+- Filtros Ejecutivos (Mes / Año).
+- Modos de Vista:
+  * Pestaña "Resumen Mensual de Horas": Muestra tarjetas con rendimientos mensuales integrados.
+  * Pestaña "Historial Detallado de Registros": Muestra una bitácora mensual de todas las entradas.
+- Botón "Descargar Informe de Pagos en Excel (Planilla de Personal)": Genera un reporte mensual procesado.
+- Botón "Descargar Documento Operativo PDF": Genera un informe diagramado estéticamente con los logos de CANTV, 
+  totales, cuadros y hojas de firma listas para envío en formato impreso o digital.
+
+================================================================================
+G. PANEL DE LA PAPELERA DE RECICLAJE (RECYCLE BIN)
+================================================================================
+Protección visual e informática ante borrados indebidos de reportes y de personal.
+
+- Interfaz de Sub-Pestañas de Control:
+  * Carpeta "Actividades": Mapea las actividades borradas por lógica.
+  * Carpeta "Personal Técnico": Muestra a las personas dadas de baja.
+- Detalle de la Cuenta Regresiva de Auto-Purga:
+  * Tarjeta minimalista por elemento que calcula de forma decreciente un contador con los días faltantes 
+    antes de la purga total en Firebase (Límite visual de 30 días con badges decorativas en color ámbar).
+- Botones de Control por Fila:
+  * Botón "Restaurar" (Icono de Deshacer): Reincorpora de forma nítida el registro a su panel operativo.
+  * Botón "Eliminar permanentemente" (Icono de Basurero Rojo): Exclusivo para Administrador General. 
+    Borra físicamente el documento en Firestore.
+- Botón "Vaciar Papelera": Operación de vaciado total.
+
+================================================================================
+H. CONFIGURACIÓN Y ADMINISTRACIÓN DE PERFIL
+================================================================================
+Panel de control para la gestión de la cuenta personal en uso.
+
+- Ficha de Usuario Activo:
+  * Muestra una imagen tipo Avatar del usuario logueado en grande (Administrador, Supervisor, Técnico).
+  * Lista detalladamente el Nombre completo, Correo electrónico y el Rol organizativo asignado por CANTV.
+- Botón "Cerrar Sesión" (Icono de Logout):
+  * Cierra de forma inmediata el canal de comunicación con Firebase Auth, limpia el almacenamiento 
+    del cliente y muestra la pantalla nítida de bienvenida.
+================================================================================
