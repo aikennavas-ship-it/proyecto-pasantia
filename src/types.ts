@@ -9,7 +9,8 @@ export interface Activity {
   incidentNumber?: string;
   fleet?: string;
   type: ActivityType;
-  status?: 'pendiente' | 'en curso' | 'completado';
+  status?: 'pendiente' | 'aprobado' | 'rechazado';
+  rejectionReason?: string;
   startTime?: string;
   endTime?: string;
   startTimeMorning?: string;
@@ -25,7 +26,7 @@ export interface Activity {
   justification?: string;
   documentation?: string;
   driver?: string;
-  code?: 'HORA' | 'PRIM' | 'PREM';
+  code?: 'HORA' | 'PRIM' | 'PREM' | 'HRDM' | 'HRDL' | 'HORS' | string;
   cause?: string;
   technicianId: string;
   technicianName: string;
@@ -36,6 +37,7 @@ export interface Activity {
   notes?: string[];
   isDeleted?: boolean;
   deletedAt?: Timestamp;
+  deletedBy?: string;
 }
 
 export interface UserProfile {
@@ -45,7 +47,21 @@ export interface UserProfile {
   role: 'admin' | 'supervisor' | 'tecnico';
   department: string;
   photoURL?: string;
+  allowPasswordChange?: boolean;
   createdAt: Timestamp;
+}
+
+export interface SystemRequest {
+  id: string;
+  ticketId: string;
+  senderId: string;
+  senderName: string;
+  senderEmail?: string;
+  type: 'password_change_unlock' | string;
+  message: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: Timestamp;
+  resolvedAt?: Timestamp;
 }
 
 export interface Technician {
@@ -54,6 +70,7 @@ export interface Technician {
   employeeId: string;
   email?: string;
   role?: 'admin' | 'supervisor' | 'tecnico';
+  uid?: string;
   idCard?: string;
   specialty: string;
   department?: string;
@@ -62,4 +79,5 @@ export interface Technician {
   createdAt: Timestamp;
   isDeleted?: boolean;
   deletedAt?: Timestamp;
+  deletedBy?: string;
 }

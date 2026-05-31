@@ -39,8 +39,8 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
 
   const navItems = [
     ...(isManager ? [{ id: 'dashboard', label: 'Panel', icon: LayoutDashboard }] : []),
-    { id: 'activities', label: 'Actividades', icon: ClipboardList },
-    ...(isManager ? [{ id: 'technicians', label: 'Personal', icon: User }] : []),
+    { id: 'activities', label: user?.role === 'tecnico' ? 'Mis Labores' : 'Actividades', icon: ClipboardList },
+    ...(isAdmin ? [{ id: 'technicians', label: 'Personal', icon: User }] : []),
     ...(isManager ? [{ id: 'reports', label: 'Reportes', icon: FileBarChart }] : []),
     ...(isAdmin ? [{ id: 'recycle-bin', label: 'Papelera', icon: Trash2 }] : []),
     { id: 'settings', label: 'Configuración', icon: Settings },
@@ -224,6 +224,10 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
                       onMarkAsRead={onMarkAsRead}
                       onClose={() => setIsNotificationsOpen(false)}
                       userId={user?.uid}
+                      onNavigate={(tab) => {
+                        setActiveTab(tab);
+                        setIsNotificationsOpen(false);
+                      }}
                     />
                   </div>
                 </>
@@ -236,21 +240,21 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
               <button 
                 onClick={() => setIsProfileOpen(!isProfileOpen)}
                 className={cn(
-                  "flex items-center gap-2 lg:gap-3 bg-white pl-2 lg:pl-3 pr-1 lg:pr-1.5 py-1 lg:py-1.5 rounded-full border border-slate-200/60 shadow-sm shadow-slate-200/20 transition-all hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-brand-blue/10 max-w-[160px] lg:max-w-[240px]",
+                  "flex items-center gap-2 sm:gap-3 bg-white pl-2 sm:pl-3 pr-1 sm:pr-1.5 py-1 sm:py-1.5 rounded-full border border-slate-200/60 shadow-sm shadow-slate-200/20 transition-all hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-brand-blue/10 max-w-[160px] sm:max-w-[240px]",
                   isProfileOpen && "border-brand-blue/30 ring-4 ring-brand-blue/5 bg-slate-50"
                 )}
               >
-                <div className="text-right hidden lg:flex flex-col items-end justify-center min-w-0 mr-1 max-w-[90px] xl:max-w-[140px]">
-                  <p className="text-xs font-bold text-slate-900 leading-tight truncate w-full">{user?.displayName || 'Usuario'}</p>
-                  <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest whitespace-nowrap truncate w-full mt-0.5">
-                    {user?.role === 'admin' ? 'Admin General' : user?.role === 'supervisor' ? 'Usu. Administrador' : 'Técnico'}
+                <div className="text-right hidden sm:flex flex-col items-end justify-center min-w-0 mr-1 max-w-[120px] xl:max-w-[160px]">
+                  <p className="text-[13px] font-bold text-slate-900 leading-tight truncate w-full">{user?.displayName || 'Usuario'}</p>
+                  <p className="text-[9px] text-brand-blue font-black uppercase tracking-widest whitespace-nowrap truncate w-full mt-0.5">
+                    {user?.role === 'admin' ? 'Admin General' : user?.role === 'supervisor' ? 'Supervisor' : 'Técnico'}
                   </p>
                 </div>
-                <div className="w-8 h-8 lg:w-9 lg:h-9 bg-brand-blue rounded-full flex items-center justify-center text-white shadow-inner shrink-0 overflow-hidden border border-slate-200">
+                <div className="w-8 h-8 lg:w-10 lg:h-10 bg-gradient-to-br from-brand-blue to-blue-600 rounded-full flex items-center justify-center text-white shadow-inner shrink-0 overflow-hidden border-2 border-white ring-1 ring-slate-200">
                   {user?.photoURL ? (
-                    <img src={user.photoURL} alt={user.displayName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    <img src={user.photoURL} alt={user?.displayName || 'User'} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
-                    <User size={14} className="lg:w-4 lg:h-4" />
+                    <span className="font-black text-xs lg:text-sm leading-none flex items-center justify-center text-white">{(user?.displayName || 'U').charAt(0).toUpperCase()}</span>
                   )}
                 </div>
               </button>
@@ -272,12 +276,12 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
                     
                     {/* User Info Container */}
                     <div className="px-6 pb-6 pt-0 -mt-10 relative">
-                      <div className="w-20 h-20 bg-white rounded-3xl shadow-xl flex items-center justify-center text-slate-300 border-4 border-white overflow-hidden mb-4 mx-auto">
+                      <div className="w-20 h-20 bg-white rounded-full shadow-xl flex items-center justify-center text-slate-300 border-4 border-white overflow-hidden mb-4 mx-auto">
                         {user?.photoURL ? (
                           <img src={user.photoURL} alt="Avatar" className="w-full h-full object-cover" />
                         ) : (
-                          <div className="w-full h-full bg-brand-blue flex items-center justify-center text-white">
-                            <User size={32} />
+                          <div className="w-full h-full bg-gradient-to-br from-brand-blue to-blue-600 flex items-center justify-center text-white font-black text-4xl leading-none">
+                            {(user?.displayName || 'U').charAt(0).toUpperCase()}
                           </div>
                         )}
                       </div>
@@ -289,7 +293,7 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
                         <p className="text-xs text-slate-500 font-medium truncate px-4">{user?.email}</p>
                         <div className="pt-2">
                           <span className="inline-flex px-3 py-1 bg-brand-blue/10 text-brand-blue text-[10px] font-black uppercase tracking-widest rounded-full border border-brand-blue/10">
-                            {user?.role === 'admin' ? 'Administrador General' : user?.role === 'supervisor' ? 'Usuario Autorizado' : 'Técnico Especialista'}
+                            {user?.role === 'admin' ? 'Administrador General' : user?.role === 'supervisor' ? 'Supervisor' : 'Técnico Especialista'}
                           </span>
                         </div>
                       </div>

@@ -1,11 +1,9 @@
 import { Bell, X, Check, Clock, UserPlus, FileEdit, Plus, Trash2, ShieldAlert } from 'lucide-react';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
-import { cn } from '../../../lib/utils';
+import { cn, formatDateSpanish } from '../../../lib/utils';
 
 interface Notification {
   id: string;
-  type: 'activity_add' | 'activity_edit' | 'tech_add' | 'tech_edit' | 'restore' | 'fatigue_alert' | 'auth_login' | 'auth_register' | 'deleted_permanently' | 'moved_to_trash';
+  type: 'activity_add' | 'activity_edit' | 'tech_add' | 'tech_edit' | 'restore' | 'fatigue_alert' | 'auth_login' | 'auth_register' | 'deleted_permanently' | 'moved_to_trash' | 'password_unlock_request' | 'password_unlock_approved' | string;
   message: string;
   userName?: string;
   createdAt: any;
@@ -18,9 +16,10 @@ interface NotificationCenterProps {
   onMarkAsRead: (id: string) => void;
   onClose: () => void;
   userId: string;
+  onNavigate?: (tab: string) => void;
 }
 
-export default function NotificationCenter({ notifications, onMarkAsRead, onClose, userId }: NotificationCenterProps) {
+export default function NotificationCenter({ notifications, onMarkAsRead, onClose, userId, onNavigate }: NotificationCenterProps) {
   const unreadCount = notifications.filter(n => !(n.readBy || []).includes(userId)).length;
 
   const getIcon = (type: string, severity?: string) => {
@@ -76,7 +75,12 @@ export default function NotificationCenter({ notifications, onMarkAsRead, onClos
                     "p-4 hover:bg-slate-50 transition-colors group relative cursor-pointer",
                     !isRead && (isCritical ? "bg-red-50/50" : "bg-brand-blue/5")
                   )}
-                  onClick={() => !isRead && onMarkAsRead(notif.id)}
+                  onClick={() => {
+                    if (!isRead) onMarkAsRead(notif.id);
+                    if (notif.type && notif.type.startsWith('password_unlock_')) {
+                      if (onNavigate) onNavigate('settings');
+                    }
+                  }}
                 >
                   <div className="flex gap-4">
                     <div className={cn(
@@ -94,7 +98,7 @@ export default function NotificationCenter({ notifications, onMarkAsRead, onClos
                         {notif.message}
                       </p>
                       <p className="text-[10px] text-slate-400 mt-1 font-bold italic">
-                        {format(notif.createdAt.toDate(), "HH:mm · d 'de' MMM", { locale: es })}
+                        {formatDateSpanish(notif.createdAt.toDate(), "HH:mm · d 'de' MMM")}
                       </p>
                     </div>
                     {!isRead && (

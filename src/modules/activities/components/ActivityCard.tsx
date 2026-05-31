@@ -9,12 +9,6 @@ interface ActivityCardProps {
   onEdit?: (activity: Activity) => void;
 }
 
-const statusConfig = {
-  'pendiente': 'bg-slate-100 text-slate-500 border-slate-200',
-  'en curso': 'bg-brand-blue/5 text-brand-blue border-brand-blue/20',
-  'completado': 'bg-emerald-50 text-emerald-600 border-emerald-100',
-};
-
 export default function ActivityCard({ activity, onEdit }: ActivityCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const descriptionLength = activity.description?.length || 0;
@@ -23,7 +17,7 @@ export default function ActivityCard({ activity, onEdit }: ActivityCardProps) {
   return (
     <div 
       onClick={() => onEdit?.(activity)}
-      className="glass-card p-0 group flex flex-col h-full relative overflow-hidden cursor-pointer transition-all duration-500 hover:-translate-y-1.5 shadow-sm hover:shadow-xl hover:shadow-brand-blue/5"
+      className="glass-card p-0 group flex flex-col h-full relative overflow-hidden cursor-pointer transition-all duration-400 hover:-translate-y-1.5 shadow-sm hover:shadow-xl hover:shadow-brand-blue/5"
     >
       {/* Dynamic Hover Gradient Border */}
       <div className="absolute bottom-0 left-0 right-0 h-1 bg-transparent group-hover:bg-gradient-to-r group-hover:from-brand-blue group-hover:via-brand-red group-hover:to-brand-blue bg-[length:200%_auto] animate-gradient-x transition-all duration-500 opacity-0 group-hover:opacity-100" />
@@ -31,14 +25,6 @@ export default function ActivityCard({ activity, onEdit }: ActivityCardProps) {
       <div className="p-6 flex flex-col flex-grow">
         {/* Top Header: Identity & Status */}
         <div className="flex items-center gap-3 mb-4">
-          {activity.status && (
-            <span className={cn(
-              "text-[9px] uppercase tracking-widest font-black px-2.5 py-1 rounded-lg border shadow-sm transition-colors",
-              statusConfig[activity.status as keyof typeof statusConfig]
-            )}>
-              {activity.status}
-            </span>
-          )}
           {activity.incidentNumber && (
             <span className="text-[9px] uppercase tracking-widest font-black px-2.5 py-1 rounded-lg bg-slate-900 text-white shadow-sm flex items-center gap-1.5">
               <Shield size={10} className="text-brand-red" />
@@ -108,7 +94,7 @@ export default function ActivityCard({ activity, onEdit }: ActivityCardProps) {
             <div className="flex flex-col gap-1.5 justify-center h-full">
               {activity.overtimeHours && activity.overtimeHours !== 0 ? (
                 <span className={cn(
-                  "text-[10px] font-black px-2 py-0.5 rounded-md shadow-sm w-max",
+                  "text-[10px] font-black px-2 py-0.5 rounded-md shadow-sm w-max whitespace-nowrap",
                   activity.overtimeHours > 0
                     ? "text-brand-blue bg-brand-blue/10 ring-1 ring-brand-blue/20"
                     : "text-red-500 bg-red-50 ring-1 ring-red-100"
@@ -119,7 +105,7 @@ export default function ActivityCard({ activity, onEdit }: ActivityCardProps) {
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter w-max">Normal J-8</span>
               )}
               {activity.hasPerDiem && (
-                <span className="text-[11px] font-black text-amber-700 bg-amber-100/50 border border-amber-200 px-2 py-0.5 rounded-md shadow-sm w-max">
+                <span className="text-[11px] font-black text-amber-700 bg-amber-100/50 border border-amber-200 px-2 py-0.5 rounded-md shadow-sm w-max whitespace-nowrap">
                   Viático: Bs. {Number(activity.perDiemAmount || 0).toFixed(2)}
                 </span>
               )}

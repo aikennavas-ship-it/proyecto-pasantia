@@ -1,0 +1,127 @@
+========================================================================================
+           SISTEMA DE GESTIÓN CANTV - CENTRO DE NOTIFICACIONES Y ALARMAS EN TIEMPO REAL
+========================================================================================
+
+Este documento detalla el funcionamiento interno de la campana de notificaciones del 
+sistema, su integración con Firebase Firestore y las reglas de visibilidad, filtros y 
+mensajes para cada uno de los roles existentes (Administrador General, Supervisor y Técnico).
+
+---
+
+1. ARQUITECTURA GENERAL Y SINCRONIZACIÓN EN TIEMPO REAL
+======================================================
+* Fuente de Datos: Colección 'notifications' en Firebase Firestore.
+* Sincronización: El sistema realiza una escucha activa (Query pasiva con useCollection) 
+  de los últimos 100 eventos ordenados cronológicamente de forma descendente.
+* Estado de Lectura Individual (readBy): Para evitar que las notificaciones de un usuario
+  aparezcan como leídas para otro, cada documento almacena una lista 'readBy' con los UIDs 
+  de los usuarios que ya hicieron clic y vieron el mensaje. El indicador visual rojo de 
+  pendiente desaparece de manera individual para cada usuario en la plataforma.
+* Niveles de Criticidad (Severity):
+  - Normal / Media: Íconos y fondos estándar (azul/gris).
+  - Alta (High / Fatigue Alerts): Resaltado con fondo rosáceo/alert-red suave, ícono de
+    alerta de escudo protector y un indicador palpitante de color rojo puro para llamar
+    la atención operativa de los supervisores y administradores.
+
+---
+
+2. COMPORTAMIENTO DE NOTIFICACIONES POR ROL DE USUARIO
+======================================================
+
+----------------------------------------------------------------------------------------
+ROL A: ADMINISTRADOR GENERAL ("admin")
+----------------------------------------------------------------------------------------
+El Administrador posee supervisión absoluta del sistema y de todas las áreas de la central.
+
+* Regla de Filtro: No se le aplica ningún filtro de seguridad ni de departamento.
+  El Administrador ve el 100% de las notificaciones generadas en toda la plataforma.
+
+* Mensajes y Alertas Recibidas:
+  1. Gestión de Papelera y Descarte:
+     - "Labor movida a la papelera: {Título_Labor}" (Al descartar una labor técnica).
+     - "Personal movido a la papelera: {Nombre_Técnico}" (Al enviar un empleado a baja).
+     - "Restaurado labor desde papelera" (Al revertir un descarte).
+     - "Restaurado técnico desde papelera" (Al volver a habilitar a un trabajador).
+     - "Vaciado total de papelera ({cant} elementos)" (Aviso de purga física de base de datos).
+  2. Registros y Altas:
+     - "Nueva labor registrada: {Título}" (Por cualquier técnico o supervisor).
+     - "Técnico registrado: {Nombre}" (Al registrar un nuevo integrante del personal).
+  3. Auditoría de Seguridad:
+     - "El administrador {email} ha iniciado sesión en el sistema." (Logs de login).
+     - "Nuevo administrador registrado: {email}." (Eventos de alta de cuentas jerárquicas).
+  4. Copia de Alertas de Fatiga (LOTTT):
+     - Recibe copia pasiva de todas las infracciones críticas del sistema, garantizando
+       auditoría legal del departamento.
+
+----------------------------------------------------------------------------------------
+ROL B: SUPERVISOR ("supervisor")
+----------------------------------------------------------------------------------------
+El Supervisor es el encargado de la validación técnica ordinaria y del control de nómina 
+de su departamento específico (ej. "DATOS" o "TRANSMISIÓN").
+
+* Regla de Filtro: Su campana filtra los eventos automáticamente bajo dos condiciones:
+  1. Eventos departamentales donde la propiedad 'scope' es "departmental", el departamento 
+     coincide estrictamente con su propio departamento operativo, e interpele a 
+     roles superiores ('supervisor' o 'all').
+  2. Alertas dirigidas directamente a su persona (mediante su UID en 'targetUserId').
+
+* Mensajes y Alertas Recibidas:
+  1. Nuevos Reportes Técnicos:
+     - "Nueva labor registrada: {Título_Labor}" (Cada vez que un técnico de su área 
+       agrega una actividad para aprobación).
+  2. Re-envíos de Corrección (Resubmission):
+     - "El técnico {Nombre} ha corregido y vuelto a enviar la labor previamente 
+       rechazada: {Título}" (Aviso para volver a evaluar una planilla corregida).
+  3. Alertas de Seguridad Laboral y Límites de Guardia (LOTTT de Venezuela):
+     - Alerta de Jornada Diaria: "CRITICO: {Nombre} cumplió {horas}h de jornada el 
+       día {Fecha}. Según LOTTT, no se permite exceder límites de sobretiempo." (Se 
+       activa cuando un técnico supera las 10 horas de jornada ordinaria más extra).
+     - Alerta de Límite Semanal: "CRÍTICO (LOTTT): {Nombre} ha alcanzado el límite de 
+       {horas} extras semanales. Restringir sobretiempos hasta próxima semana." (Se 
+       activa cuando el límite acumulativo de sobretiempo semanal alcanza lo permitido).
+  4. Control de Acceso:
+     - "El usuario {email} ha iniciado sesión en el sistema." (Control presencial).
+
+----------------------------------------------------------------------------------------
+ROL C: TÉCNICO ("tecnico")
+----------------------------------------------------------------------------------------
+El Técnico ingresa sus planillas, visualiza sus reportes individuales y corrige lo que 
+haya sido objetado por la superioridad.
+
+* Regla de Filtro: Absolutamente restrictivo. El Técnico solo puede ver notificaciones 
+  donde su UID coincida exactamente con la propiedad 'targetUserId' del mensaje, 
+  permitiendo únicamente comunicación de naturaleza 'personal'. Nunca ve eventos grupales 
+  de otros trabajadores ni alertas de administración general.
+
+* Mensajes y Alertas Recibidas:
+  1. Aprobación del Supervisor:
+     - "Tu actividad {IncidentDoc/Título} del {Fecha} ha sido aprobada por el Supervisor."
+       (Confirma de forma exitosa que sus horas extra, manejo y viáticos computan para nómina).
+  2. Ajustes / Rechazos de Planilla:
+     - "Tu actividad {IncidentDoc/Título} del {Fecha} fue rechazada por el Supervisor 
+       {Nombre}. Motivo: {Mencion_del_motivo}" (Informa de rechazos con la justificación
+       en tiempo real para que proceda a corregir los datos de inmediato desde su panel).
+  3. Alertas de Transparencia de Auditoría:
+     - "Auditoría: Horarios modificados por Administrador en labor {Título}. 
+       Cambio: {Hora_Original} -> {Hora_Nueva}" (Recibe esta notificación si el 
+       Administrador General reescribe o ajusta algún horario por motivos fiscales o contables).
+
+---
+
+3. TIPOS DE EVENTOS Y SUS ÍCONOS EN LA IU
+=========================================
+La campana utiliza la librería 'lucide-react' para brindar representaciones gráficas:
+* 'fatigue_alert' 🡒 Ícono 'ShieldAlert' (Escudo de Alerta en rojo/ámbar para alertar supervisor).
+* 'activity_add'  🡒 Ícono 'Plus' (Círculo de adición en verde esmeralda).
+* 'activity_edit' 🡒 Ícono 'FileEdit' (Lápiz y hoja en azul CANTV).
+* 'tech_add'      🡒 Ícono 'UserPlus' (Silueta de usuario con adición en gris pizarra).
+* 'tech_edit'     🡒 Ícono 'FileEdit' (Ajustes de datos personales).
+* 'restore'       🡒 Ícono 'Clock' (Reloj de restauración histórico en tono naranja).
+* 'auth_login'    🡒 Ícono 'Check' (Verificación en verde luminoso).
+* 'auth_register' 🡒 Ícono 'UserPlus' (Registro de credenciales en violeta índigo).
+* 'moved_to_trash'🡒 Ícono 'Trash2' (Papelera ámbar para archivo temporal).
+* 'deleted_permanently' 🡒 Ícono 'Trash2' (Papelera roja para borrado físico).
+
+========================================================================================
+                  DOCUMENTACIÓN TÉCNICA - TODOS LOS DERECHOS RESERVADOS
+========================================================================================

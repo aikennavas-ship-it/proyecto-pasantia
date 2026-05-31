@@ -6,9 +6,9 @@ import firebaseConfig from '../firebase-applet-config.json';
 
 export const app = initializeApp(firebaseConfig);
 export { firebaseConfig };
-// Use the firestoreDatabaseId from the config with long polling forced for iframe compatibility
+// Use the firestoreDatabaseId from the config
 export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
+  experimentalAutoDetectLongPolling: true,
 }, firebaseConfig.firestoreDatabaseId);
 
 // Enable offline persistence

@@ -3,13 +3,13 @@ import { db } from '../firebase';
 
 export async function seedDummyData(adminId: string) {
   const users = [
-    { name: "Juan Escalona", role: "tecnico", specialty: "TRANSMISIÓN", idCard: "V-15487692", emp: "107881" },
-    { name: "Luis Fernandez", role: "tecnico", specialty: "DATOS", idCard: "V-18765432", emp: "107882" },
-    { name: "Ana Silva", role: "supervisor", specialty: "RADIO", idCard: "V-19876543", emp: "107883" },
-    { name: "Carlos Mata", role: "tecnico", specialty: "ENERGÍA", idCard: "V-20123456", emp: "107884" },
-    { name: "Maria Rojas", role: "tecnico", specialty: "FIBRA ÓPTICA", idCard: "V-22345678", emp: "107885" },
-    { name: "Jose Perez", role: "tecnico", specialty: "TRANSMISIÓN", idCard: "V-16789012", emp: "107886" },
-    { name: "Elena Gonzalez", role: "tecnico", specialty: "DATOS", idCard: "V-17890123", emp: "107887" }
+    { name: "Juan Escalona", role: "tecnico", specialty: "TRANSMISIÓN", idCard: "V-15487692", emp: "P00107881" },
+    { name: "Luis Fernandez", role: "tecnico", specialty: "DATOS", idCard: "V-18765432", emp: "P00107882" },
+    { name: "Ana Silva", role: "supervisor", specialty: "RADIO", idCard: "V-19876543", emp: "P00107883" },
+    { name: "Carlos Mata", role: "tecnico", specialty: "ENERGÍA", idCard: "V-20123456", emp: "P00107884" },
+    { name: "Maria Rojas", role: "tecnico", specialty: "FIBRA ÓPTICA", idCard: "V-22345678", emp: "P00107885" },
+    { name: "Jose Perez", role: "tecnico", specialty: "TRANSMISIÓN", idCard: "V-16789012", emp: "P00107886" },
+    { name: "Elena Gonzalez", role: "tecnico", specialty: "DATOS", idCard: "V-17890123", emp: "P00107887" }
   ];
 
   console.log("Creando personal...");
@@ -31,6 +31,7 @@ export async function seedDummyData(adminId: string) {
 
   const techPromises = users.map(u => {
     techNames.push(u.name);
+    const emailName = u.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(' ').join('.');
     return addDoc(collection(db, 'technicians'), {
       name: u.name,
       employeeId: u.emp,
@@ -39,6 +40,7 @@ export async function seedDummyData(adminId: string) {
       phoneNumber: "0414-1234567",
       status: "activo",
       role: u.role,
+      email: `${emailName}@cantv.com.ve`,
       createdAt: Timestamp.now(),
       isDeleted: false
     });
@@ -87,6 +89,7 @@ export async function seedDummyData(adminId: string) {
         hasPerDiem: isOvertime,
         perDiemAmount: isOvertime ? 200 : 0,
         overtimeHours: otHours,
+        driver: p[0] || "Luis Martínez",
         technicianId: "dummy123",
         technicianName: p[0],
         participants: p,

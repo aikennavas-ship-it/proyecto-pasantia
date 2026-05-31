@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityType, Technician } from '../../../types';
+import { ActivityType, Technician, UserProfile } from '../../../types';
 import { X, AlertCircle } from 'lucide-react';
 import { cn, formatIncidentNumber } from '../../../lib/utils';
 
@@ -11,9 +11,9 @@ export function formatHours(decimalHours: number): string {
   const minutes = Math.round((absoluteDecimal - hours) * 60);
   
   const sign = isNegative ? '-' : '';
-  if (hours > 0 && minutes > 0) return `${sign}${hours}h ${minutes}m`;
+  if (hours > 0 && minutes > 0) return `${sign}${hours}h ${minutes}min`;
   if (hours > 0) return `${sign}${hours}h`;
-  return `${sign}${minutes}m`;
+  return `${sign}${minutes}min`;
 }
 
 interface ActivityFormProps {
@@ -22,9 +22,10 @@ interface ActivityFormProps {
   initialData?: any;
   technicians?: Technician[];
   initialDate?: Date;
+  user?: UserProfile | null;
 }
 
-export default function ActivityForm({ onSubmit, onClose, initialData, technicians = [], initialDate }: ActivityFormProps) {
+export default function ActivityForm({ onSubmit, onClose, initialData, technicians = [], initialDate, user }: ActivityFormProps) {
   const [formData, setFormData] = React.useState({
     title: initialData?.title || '',
     description: initialData?.description || '',
@@ -43,10 +44,11 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
       ? initialData.participants 
       : (initialData?.technicianName ? [initialData.technicianName] : []) as string[],
     justification: initialData?.justification || '',
-    documentation: initialData?.documentation || 'NO', // 'SI' o 'NO'
     driver: initialData?.driver || '',
-    code: initialData?.code || 'HORA',
-    cause: initialData?.cause || '',
+    code: initialData?.code && initialData.code !== 'HORA' ? initialData.code : 'PRIM',
+    cause: initialData?.cause || (initialData?.code && initialData.code !== 'HORA' ? initialData.cause : 'Horas Product. Con Manejo'),
+    status: initialData?.status || 'aprobado',
+    rejectionReason: initialData?.rejectionReason || '',
     date: (function() {
       if (!initialData?.date) return initialDate || new Date();
       if (typeof initialData.date.toDate === 'function') return initialData.date.toDate();
@@ -56,6 +58,10 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
   });
 
   const [errorPrompt, setErrorPrompt] = React.useState('');
+
+  const activeTechnicians = React.useMemo(() => {
+    return (technicians || []).filter(tech => tech.status?.toLowerCase().trim() === 'activo');
+  }, [technicians]);
 
   const toggleParticipant = (name: string) => {
     const current = [...formData.participants];
@@ -239,7 +245,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-2 sm:p-4">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-2 sm:p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}></div>
       <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[95vh] sm:max-h-[90vh]">
         <div className="px-6 sm:px-8 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
@@ -296,6 +302,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
                 onChange={e => setFormData({ ...formData, fleet: e.target.value })}
               />
             </div>
+
             <div className="space-y-1">
               <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Región</label>
               <input
@@ -332,17 +339,6 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Documentación</label>
-              <select 
-                className="input-field" 
-                value={formData.documentation} 
-                onChange={e => setFormData({ ...formData, documentation: e.target.value })}
-              >
-                <option value="NO">NO</option>
-                <option value="SI">SI</option>
-              </select>
-            </div>
-            <div className="space-y-1">
               <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Manejo (Chofer)</label>
               <input
                 type="text"
@@ -357,12 +353,34 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
               <select 
                 className="input-field" 
                 value={formData.code} 
-                onChange={e => setFormData({ ...formData, code: e.target.value as any })}
+                onChange={e => {
+                  const selectedCode = e.target.value;
+                  let preCause = formData.cause;
+                  if (selectedCode === 'PRIM') preCause = "Horas Product. Con Manejo";
+                  else if (selectedCode === 'PREM') preCause = "Horas Solo Manejo";
+                  else if (selectedCode === 'HORS') preCause = "Horas Product. Sin manejo";
+                  else if (selectedCode === 'HRDM') preCause = "Horario Dia Libre con Manejo";
+                  else if (selectedCode === 'HRDL') preCause = "Horario Día Libre sin Manejo";
+                  setFormData({ ...formData, code: selectedCode, cause: preCause });
+                }}
               >
-                <option value="HORA">HORA</option>
                 <option value="PRIM">PRIM</option>
                 <option value="PREM">PREM</option>
+                <option value="HRDM">HRDM</option>
+                <option value="HRDL">HRDL</option>
+                <option value="HORS">HORS</option>
               </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Causa</label>
+              <input
+                required
+                readOnly
+                type="text"
+                className="input-field bg-slate-50/80 text-slate-600 font-bold cursor-not-allowed"
+                value={formData.cause}
+                placeholder="Seleccione un código..."
+              />
             </div>
           </div>
 
@@ -385,49 +403,6 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
               value={formData.description}
               onChange={e => setFormData({ ...formData, description: e.target.value })}
             />
-          </div>
-
-          <div className="space-y-1.5">
-            <div className="flex justify-between items-center">
-              <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Causa</label>
-              <span className={cn(
-                "text-[10px] font-bold",
-                formData.cause.length > 900 ? "text-red-500" : "text-slate-500"
-              )}>
-                {formData.cause.length} / 1000
-              </span>
-            </div>
-            <textarea
-              required
-              rows={2}
-              maxLength={1000}
-              className="input-field resize-none h-20"
-              placeholder="Escriba la causa (ej: solo horas productivas, horas productivas con manejo, solo manejo)..."
-              value={formData.cause}
-              onChange={e => setFormData({ ...formData, cause: e.target.value })}
-            />
-            <div className="flex flex-wrap gap-2 pt-1 ml-1 items-center">
-              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Rellenar plantilla:</span>
-              {[
-                'solo horas productivas',
-                'horas productivas con manejo',
-                'solo manejo'
-              ].map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  onClick={() => setFormData({ ...formData, cause: suggestion })}
-                  className={cn(
-                    "px-3 py-1 text-[10px] font-bold rounded-lg border transition-all uppercase tracking-wide",
-                    formData.cause === suggestion
-                      ? "bg-slate-800 text-white border-slate-800"
-                      : "bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-400"
-                  )}
-                >
-                  {suggestion}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div className="space-y-1">
@@ -518,10 +493,10 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
             <div className="md:col-span-2 space-y-2">
               <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Técnicos Participantes</label>
               <div className="p-4 border border-slate-200 rounded-2xl bg-white max-h-40 overflow-y-auto custom-scrollbar grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {technicians.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic py-2 col-span-full">No hay técnicos registrados. Regístralos en la sección 'Personal'.</p>
+                {activeTechnicians.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic py-2 col-span-full">No hay técnicos activos registrados para asignar.</p>
                 ) : (
-                  technicians.map(tech => (
+                  activeTechnicians.map(tech => (
                     <button
                       key={tech.id}
                       type="button"
@@ -537,10 +512,22 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
                         "w-2 h-2 rounded-full shrink-0",
                         formData.participants.includes(tech.name) ? "bg-white" : "bg-slate-300"
                       )} />
-                      <div className="flex flex-col overflow-hidden">
-                        <span className="text-xs font-bold truncate">{tech.name}</span>
+                      <div className="flex flex-col overflow-hidden w-full">
+                        <div className="flex items-center gap-1.5 justify-between w-full">
+                          <span className="text-xs font-bold truncate leading-tight mr-1">{tech.name}</span>
+                          <span className={cn(
+                            "text-[8px] font-black uppercase px-1 py-0.5 rounded tracking-wider shrink-0 leading-none",
+                            tech.role === 'supervisor'
+                              ? (formData.participants.includes(tech.name) ? "bg-white/20 text-white" : "bg-amber-100 text-amber-700 border border-amber-200")
+                              : tech.role === 'admin'
+                                ? (formData.participants.includes(tech.name) ? "bg-white/20 text-white" : "bg-purple-100 text-purple-700 border border-purple-200")
+                                : (formData.participants.includes(tech.name) ? "bg-white/20 text-white" : "bg-blue-50 text-blue-700 border border-blue-100")
+                          )}>
+                            {tech.role === 'supervisor' ? 'SUP' : tech.role === 'admin' ? 'ADM' : 'TEC'}
+                          </span>
+                        </div>
                         <span className={cn(
-                          "text-[9px] font-mono",
+                          "text-[9px] font-mono mt-0.5",
                           formData.participants.includes(tech.name) ? "text-white/80" : "text-slate-400"
                         )}>{tech.employeeId}</span>
                       </div>
@@ -551,7 +538,6 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
               <p className="text-[10px] text-slate-400 italic font-medium mt-1">* Seleccione todos los técnicos que colaboraron en esta labor.</p>
             </div>
           </div>
-
           <div className="pt-6 flex gap-4">
             <button type="button" onClick={onClose} className="flex-1 px-6 py-3.5 text-slate-600 font-bold hover:bg-slate-100 rounded-2xl transition-all">
               Cancelar

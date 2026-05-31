@@ -5,7 +5,7 @@ service cloud.firestore {
     // Primitives & Identity Helpers
     // ------------------------------------------------------------------------
     function isValidId(id) { 
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+      return id is string && id.size() <= 128; 
     }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
@@ -16,19 +16,26 @@ service cloud.firestore {
     }
     
     function getUserRole() {
-      let profile = get(/databases/$(database)/documents/users/$(request.auth.uid));
-      return (profile != null) ? profile.data.role : null;
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : null;
     }
     
     function isAdmin() {
       return isSignedIn() && (
-        request.auth.token.email in ["aikennavas@gmail.com", "vantoniomolina@gmail.com", "vinumsanguinisetlacrimarum3@gmail.com", "admin@cantv.com.ve", "asistente@cantv.com.ve"] ||
+        ('email' in request.auth.token && request.auth.token.email in ["aikennavas@gmail.com", "vantoniomolina@gmail.com", "vinumsanguinisetlacrimarum3@gmail.com", "admin@cantv.com.ve", "asistente@cantv.com.ve", "aiknav@cantv.com.ve"]) ||
         getUserRole() == 'admin'
       );
     }
     
     function isManager() {
       return isAdmin() || (isSignedIn() && getUserRole() == 'supervisor');
+    }
+    
+    function isAllowedRoleForUser(email, role) {
+      return role == 'tecnico' || role == 'unauthorized' || role == 'user' ||
+             (role == 'supervisor' && (email.endsWith('@cantv.com.ve') || email.endsWith('@cantv.net') || email.endsWith('@CANTV.COM.VE') || email.endsWith('@CANTV.NET') || email in ["aikennavas@gmail.com", "vantoniomolina@gmail.com", "vinumsanguinisetlacrimarum3@gmail.com", "admin@cantv.com.ve", "asistente@cantv.com.ve", "aiknav@cantv.com.ve"])) ||
+             (role == 'admin' && email in ["aikennavas@gmail.com", "vantoniomolina@gmail.com", "vinumsanguinisetlacrimarum3@gmail.com", "admin@cantv.com.ve", "asistente@cantv.com.ve", "aiknav@cantv.com.ve"]);
     }
     
     // ------------------------------------------------------------------------
@@ -42,27 +49,35 @@ service cloud.firestore {
     // Users Collection (PII)
     // ------------------------------------------------------------------------
     function isValidUserProfile(data) {
-      return data.size() >= 5 && data.size() <= 8 &&
+      return data.size() >= 5 && data.size() <= 10 &&
              data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'createdAt']) &&
-             data.uid is string && data.uid.size() <= 128 && data.uid == request.auth.uid &&
+             data.uid is string && data.uid.size() <= 128 &&
              data.email is string && data.email.size() <= 200 &&
              data.displayName is string && data.displayName.size() <= 100 &&
-             data.role in ['admin', 'supervisor', 'tecnico'] &&
+             data.role in ['admin', 'supervisor', 'tecnico', 'unauthorized', 'user'] &&
+             (!('allowPasswordChange' in data) || data.allowPasswordChange is bool) &&
              data.createdAt is timestamp;
     }
 
+    // ------------------------------------------------------------------------
+    // System Config
+    // ------------------------------------------------------------------------
+    match /config/{configId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     match /users/{userId} {
-      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
-      allow list: if isAdmin();
+      allow get: if isSignedIn() && (request.auth.uid == userId || isManager());
+      allow list: if isManager();
       
-      allow create: if isValidId(userId) && isOwner(userId) && isValidUserProfile(incoming()) && 
-                    // Protect role escalation
-                    (incoming().role != 'admin' || request.auth.token.email in ["aikennavas@gmail.com", "admin@cantv.com.ve", "vantoniomolina@gmail.com", "vinumsanguinisetlacrimarum3@gmail.com"]);
+      allow create: if isValidId(userId) && isOwner(userId) && 
+                    ('email' in request.auth.token) &&
+                    (!('role' in incoming()) || isAllowedRoleForUser(request.auth.token.email, incoming().role));
                     
-      allow update: if isValidId(userId) && (isOwner(userId) || isAdmin()) && isValidUserProfile(incoming()) &&
-                    (incoming().role == existing().role || isAdmin()) &&
-                    incoming().uid == existing().uid &&
-                    incoming().createdAt == existing().createdAt;
+      allow update: if isSignedIn() && (
+                      request.auth.uid == userId || isManager()
+                    );
                     
       allow delete: if isAdmin();
     }
@@ -75,25 +90,48 @@ service cloud.firestore {
              data.name is string &&
              (!('employeeId' in data) || data.employeeId is string) &&
              (!('specialty' in data) || data.specialty is string) &&
+             (!('idCard' in data) || data.idCard is string) &&
              (!('phoneNumber' in data) || data.phoneNumber is string) &&
              (!('status' in data) || data.status is string) &&
+             (!('photoURL' in data) || data.photoURL is string || data.photoURL == null) &&
+             (!('role' in data) || data.role is string) &&
+             (!('email' in data) || data.email is string) &&
+             (!('department' in data) || data.department is string) &&
+             (!('uid' in data) || data.uid is string || data.uid == null) &&
              (!('createdAt' in data) || data.createdAt is timestamp || data.createdAt is string) &&
              (!('isDeleted' in data) || data.isDeleted is bool) &&
              (!('deletedAt' in data) || (data.deletedAt is timestamp || data.deletedAt == null || data.deletedAt is string)) &&
              (!('updatedAt' in data) || data.updatedAt is timestamp || data.updatedAt is string);
     }
 
+    function isSelfTechnician(techData) {
+      return isSignedIn() && 
+             (
+               ('uid' in techData && techData.uid == request.auth.uid) || 
+               ('email' in techData && 'email' in request.auth.token && techData.email.lower() == request.auth.token.email.lower())
+             );
+    }
+
     match /technicians/{techId} {
       allow get: if isValidId(techId) && isSignedIn();
       allow list: if isSignedIn();
       
-      allow create: if isValidId(techId) && isManager() && isValidTechnician(incoming());
+      allow create: if isValidId(techId) && isAdmin() && isValidTechnician(incoming());
       
-      allow update: if isValidId(techId) && isManager() && isValidTechnician(incoming()) &&
+      allow update: if isValidId(techId) && isValidTechnician(incoming()) &&
+                    (
+                      isAdmin() || 
+                      (
+                        isSelfTechnician(existing()) &&
+                        (!('role' in existing()) || incoming().role == existing().role) &&
+                        (!('employeeId' in existing()) || incoming().employeeId == existing().employeeId) &&
+                        (!('isDeleted' in existing()) || incoming().isDeleted == existing().isDeleted)
+                      )
+                    ) &&
                     ( (!('createdAt' in existing()) && !('createdAt' in incoming())) || 
                       (incoming().createdAt == existing().createdAt) );
                     
-      allow delete: if isManager();
+      allow delete: if isAdmin();
     }
 
     // ------------------------------------------------------------------------
@@ -102,43 +140,55 @@ service cloud.firestore {
     function isValidActivity(data) {
       return data.size() >= 1 && data.size() <= 50 &&
              data.title is string &&
-             (!('description' in data) || data.description is string) &&
-             (!('type' in data) || data.type is string) &&
-             (!('status' in data) || data.status is string) &&
-             (!('hasPerDiem' in data) || data.hasPerDiem is bool) &&
-             (!('date' in data) || data.date is timestamp || data.date is string) &&
-             (!('createdAt' in data) || data.createdAt is timestamp || data.createdAt is string) &&
-             (!('technicianId' in data) || data.technicianId is string) &&
-             (!('technicianName' in data) || data.technicianName is string) &&
-             (!('participants' in data) || data.participants is list) &&
-             (!('notes' in data) || data.notes is list) &&
-             (!('isDeleted' in data) || data.isDeleted is bool) &&
-             (!('deletedAt' in data) || data.deletedAt is timestamp || data.deletedAt == null || data.deletedAt is string) &&
-             (!('updatedAt' in data) || data.updatedAt is timestamp || data.updatedAt is string) &&
-             (!('adminId' in data) || data.adminId is string) &&
-             (!('overtimeHours' in data) || data.overtimeHours is number) &&
-             (!('perDiemAmount' in data) || data.perDiemAmount is number) &&
-             (!('startTime' in data) || data.startTime is string) &&
-             (!('endTime' in data) || data.endTime is string) &&
-             (!('incidentNumber' in data) || data.incidentNumber is string) &&
-             (!('code' in data) || data.code is string) &&
-             (!('cause' in data) || data.cause is string) &&
-             (!('fleet' in data) || data.fleet is string);
+             (!('description' in data) || data.description == null || data.description is string) &&
+             (!('type' in data) || data.type == null || data.type is string) &&
+             (!('status' in data) || data.status == null || data.status is string) &&
+             (!('hasPerDiem' in data) || data.hasPerDiem == null || data.hasPerDiem is bool) &&
+             (!('date' in data) || data.date == null || data.date is timestamp || data.date is string) &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is timestamp || data.createdAt is string) &&
+             (!('technicianId' in data) || data.technicianId == null || data.technicianId is string) &&
+             (!('technicianName' in data) || data.technicianName == null || data.technicianName is string) &&
+             (!('participants' in data) || data.participants == null || data.participants is list) &&
+             (!('notes' in data) || data.notes == null || data.notes is list) &&
+             (!('isDeleted' in data) || data.isDeleted == null || data.isDeleted is bool) &&
+             (!('deletedAt' in data) || data.deletedAt == null || data.deletedAt is timestamp || data.deletedAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is timestamp || data.updatedAt is string) &&
+             (!('adminId' in data) || data.adminId == null || data.adminId is string) &&
+             (!('overtimeHours' in data) || data.overtimeHours == null || data.overtimeHours is number) &&
+             (!('perDiemAmount' in data) || data.perDiemAmount == null || data.perDiemAmount is number) &&
+             (!('startTime' in data) || data.startTime == null || data.startTime is string) &&
+             (!('endTime' in data) || data.endTime == null || data.endTime is string) &&
+             (!('incidentNumber' in data) || data.incidentNumber == null || data.incidentNumber is string) &&
+             (!('code' in data) || data.code == null || data.code is string) &&
+             (!('cause' in data) || data.cause == null || data.cause is string) &&
+             (!('fleet' in data) || data.fleet == null || data.fleet is string);
+    }
+
+    function isParticipating(data) {
+      return (data.adminId == request.auth.uid) || 
+             (request.auth.token != null && 'name' in request.auth.token && data.participants != null && request.auth.token.name in data.participants);
     }
 
     match /activities/{activityId} {
-      allow get: if isValidId(activityId) && isSignedIn();
+      allow get: if isValidId(activityId) && isSignedIn() && (isManager() || isParticipating(resource.data));
       allow list: if isSignedIn();
       
-      allow create: if isValidId(activityId) && isSignedIn() && isValidActivity(incoming());
+      allow create: if isValidId(activityId) && isSignedIn() && isValidActivity(incoming()) && (getUserRole() != 'tecnico' || incoming().adminId == request.auth.uid);
       
       allow update: if isValidId(activityId) && 
                     isSignedIn() && 
                     isValidActivity(incoming()) &&
-                    (isManager() || existing().technicianId == request.auth.uid || existing().adminId == request.auth.uid) &&
+                    (
+                      isManager() 
+                      || 
+                      (
+                        isParticipating(existing()) && 
+                        existing().status != 'approved'
+                      )
+                    ) &&
                     ( (!('createdAt' in existing()) && !('createdAt' in incoming())) || 
                       (incoming().createdAt == existing().createdAt) );
-                    
+                      
       allow delete: if isManager();
     }
 
@@ -146,23 +196,35 @@ service cloud.firestore {
     // Notifications Collection
     // ------------------------------------------------------------------------
     function isValidNotification(data) {
-      return data.size() >= 5 && data.size() <= 12 &&
-             data.keys().hasAll(['type', 'message', 'createdAt', 'readBy']) &&
+      return data.size() >= 3 && data.size() <= 18 &&
+             data.keys().hasAll(['type', 'message', 'createdAt']) &&
              data.type is string && data.type.size() <= 50 &&
              data.message is string && data.message.size() <= 600 &&
              data.createdAt is timestamp &&
-             data.readBy is list && data.readBy.size() <= 1000 &&
-             (!('userId' in data) || data.userId is string) &&
-             (!('userName' in data) || data.userName is string) &&
-             (!('severity' in data) || data.severity in ['normal', 'medium', 'high']) &&
-             (!('technician' in data) || data.technician is string) &&
-             (!('week' in data) || data.week is string) &&
-             (!('date' in data) || data.date is string);
+             (!('readBy' in data) || (data.readBy is list && data.readBy.size() <= 1000)) &&
+             (!('userId' in data) || data.userId == null || data.userId is string) &&
+             (!('userName' in data) || data.userName == null || data.userName is string) &&
+             (!('severity' in data) || data.severity == null || data.severity in ['normal', 'medium', 'high']) &&
+             (!('technician' in data) || data.technician == null || data.technician is string) &&
+             (!('week' in data) || data.week == null || data.week is string) &&
+             (!('date' in data) || data.date == null || data.date is string) &&
+             (!('scope' in data) || data.scope in ['global', 'departmental', 'personal']) &&
+             (!('targetRole' in data) || data.targetRole in ['admin', 'supervisor', 'tecnico', 'all']) &&
+             (!('targetUserId' in data) || data.targetUserId == null || data.targetUserId is string) &&
+             (!('department' in data) || data.department == null || data.department is string);
     }
 
     match /notifications/{notifId} {
-      allow get: if isValidId(notifId) && isSignedIn();
-      allow list: if isSignedIn();
+      allow get: if isValidId(notifId) && isSignedIn() && (
+        isAdmin() ||
+        (getUserRole() == 'supervisor' && (resource.data.scope == 'departmental' || resource.data.targetRole == 'supervisor' || resource.data.scope == 'global')) ||
+        (getUserRole() == 'tecnico' && resource.data.targetUserId == request.auth.uid)
+      );
+      allow list: if isSignedIn() && (
+        isAdmin() ||
+        (getUserRole() == 'supervisor') ||
+        (getUserRole() == 'tecnico' && resource.data.targetUserId == request.auth.uid)
+      );
       
       allow create: if isValidId(notifId) && isSignedIn() && isValidNotification(incoming());
       

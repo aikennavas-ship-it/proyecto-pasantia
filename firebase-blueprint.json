@@ -21,6 +21,8 @@
         "date": { "type": "object" },
         "createdAt": { "type": "object" },
         "notes": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string", "enum": ["pendiente", "aprobado", "rechazado"] },
+        "rejectionReason": { "type": "string" },
         "isDeleted": { "type": "boolean" },
         "deletedAt": { "type": "object" }
       },
@@ -36,6 +38,7 @@
         "displayName": { "type": "string" },
         "role": { "type": "string", "enum": ["admin", "supervisor", "tecnico"] },
         "department": { "type": "string" },
+        "allowPasswordChange": { "type": "boolean" },
         "createdAt": { "type": "object" }
       },
       "required": ["uid", "email", "displayName", "role", "createdAt"]
@@ -67,7 +70,11 @@
         "message": { "type": "string" },
         "relatedId": { "type": "string" },
         "createdAt": { "type": "object" },
-        "readBy": { "type": "array", "items": { "type": "string" } }
+        "readBy": { "type": "array", "items": { "type": "string" } },
+        "scope": { "type": "string", "enum": ["global", "departmental", "personal"] },
+        "targetRole": { "type": "string", "enum": ["admin", "supervisor", "tecnico", "all"] },
+        "targetUserId": { "type": "string" },
+        "department": { "type": "string" }
       },
       "required": ["userId", "userName", "type", "message", "createdAt", "readBy"]
     }
