@@ -12,14 +12,85 @@
  * - Gestiona la exportación directa a Excel y opciones de ordenación de filas.
  */
 import React, { useState, useRef, useEffect } from 'react';
-import { Download, Table, Calendar, ChevronLeft, ChevronRight, ChevronDown, FileText, Plus, Database, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Search, AlertOctagon, X, Clock, Zap, TrendingDown } from 'lucide-react';
+import { Download, Table, Calendar, ChevronLeft, ChevronRight, ChevronDown, FileText, Plus, Database, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Search, AlertOctagon, X, Clock, Zap, TrendingDown, User } from 'lucide-react';
 import { Activity, Technician, UserProfile } from '../../../types';
-import { cn, formatDateSpanish, capitalizeSentence, getActivityBounds, calculateRealHours, parseTime } from '../../../lib/utils';
+import { cn, formatDateSpanish, capitalizeSentence, getActivityBounds, parseTime, calculateMetrics, calculateExcesoPersonas, optimizarAlturasJustificacionSGA } from '../../../lib/utils';
+import { formatearRangoSemanal } from '../../../lib/formateador';
 import { format, startOfDay, endOfDay, isSameDay, addDays, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { formatHours } from './ActivityForm';
+import { obtenerNombreArchivoExcel } from '../../../lib/filenameUtils';
+import { obtenerDatosUsuarioReactivo, obtenerDatosPorIdSecuencial, inicializarTecnicosIdsSeguro } from '../../../utils/resolver';
+
+export const formatearExcesoTiempo = (totalMinutos: number): string => {
+  const horas = Math.floor(totalMinutos / 60);
+  const minutos = Math.round(totalMinutos % 60);
+
+  if (minutos === 0) {
+    return `${horas}h`;
+  }
+  
+  return `${horas}h ${minutos}min`;
+};
+
+interface TecnicoDepurado {
+  originalName: string;
+  nombreCompleto: string;
+  carnet: string;
+  cedula: string;
+  departamento: string;
+  isDefinitiveBaja: boolean;
+}
+
+const sonMismoUsuario = (nombreA: string, nombreB: string): boolean => {
+  const normalizarYDividir = (str: string) => 
+    str.toLowerCase()
+       .normalize("NFD")
+       .replace(/[\u0300-\u036f]/g, "") // Remueve acentos
+       .replace(/[^a-z0-9\s]/g, "")     // Remueve caracteres especiales
+       .split(/\s+/)
+       .filter((w: string) => w.length > 2);      // Ignora palabras cortas de enlace
+
+  const palabrasA = normalizarYDividir(nombreA);
+  const palabrasB = normalizarYDividir(nombreB);
+
+  if (palabrasA.length === 0 || palabrasB.length === 0) return false;
+
+  const [menor, mayor] = palabrasA.length <= palabrasB.length ? [palabrasA, palabrasB] : [palabrasB, palabrasA];
+
+  return menor.every((palabra: string) => mayor.includes(palabra));
+};
+
+export const depurarYUnificarTecnicos = (tecnicos: TecnicoDepurado[]): TecnicoDepurado[] => {
+  if (!tecnicos || tecnicos.length === 0) return [];
+
+  const procesados: TecnicoDepurado[] = [];
+
+  tecnicos.forEach(tecnico => {
+    const tieneCarnetValido = tecnico.carnet && tecnico.carnet !== 'S/N';
+
+    const duplicadoExistenteIndex = procesados.findIndex(p => {
+      const mismoCarnet = p.carnet === tecnico.carnet && tieneCarnetValido && p.carnet !== 'S/N';
+      const mismoNombre = sonMismoUsuario(p.nombreCompleto, tecnico.nombreCompleto);
+      return mismoCarnet || mismoNombre;
+    });
+
+    if (duplicadoExistenteIndex !== -1) {
+      const pExistente = procesados[duplicadoExistenteIndex];
+      const pTieneCarnetValido = pExistente.carnet && pExistente.carnet !== 'S/N';
+
+      if (!pTieneCarnetValido && tieneCarnetValido) {
+        procesados[duplicadoExistenteIndex] = tecnico;
+      }
+    } else {
+      procesados.push(tecnico);
+    }
+  });
+
+  return procesados;
+};
 
 function CustomSelect({ value, options, onChange, className, align = 'center' }: { value: any, options: {value: any, label: string, disabled?: boolean}[], onChange: (val: any) => void, className?: string, align?: 'left'|'center'|'right' }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -128,6 +199,34 @@ const ExpandableText = ({
   );
 };
 
+export function ExpandableActivityTitle({ title, titles }: { title?: string; titles?: string[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const text = titles
+    ? titles.map((t: string) => capitalizeSentence(!t || t.trim().toLowerCase() === 's' ? 'Mantenimiento Preventivo de Enlace' : t)).join(', ')
+    : capitalizeSentence(title || 'Sin Título');
+  const isLong = text.length > 35;
+
+  return (
+    <div className="text-sm font-semibold text-slate-800 leading-snug">
+      <p className={expanded ? "whitespace-normal text-slate-800" : "line-clamp-1 text-slate-800"}>
+        {text}
+        {isLong && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(!expanded);
+            }}
+            className="text-[11px] text-brand-blue font-bold hover:underline inline ml-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap focus:outline-none"
+          >
+            {expanded ? "ver menos" : "ver más..."}
+          </button>
+        )}
+      </p>
+    </div>
+  );
+}
+
 const formatTimeAMPM = (time24: string) => {
   if (!time24 || time24 === '--:--') return '--:--';
   const parts = time24.split(':');
@@ -151,6 +250,14 @@ const formatTime24h = (time24: string, defaultValue: string) => {
     }
   }
   return defaultValue;
+};
+
+const normalizeStr = (str: string | undefined | null): string => {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
 };
 
 interface SmartSpreadsheetProps {
@@ -194,11 +301,15 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
         activityDate = new Date();
       }
       const isToday = isSameDay(activityDate, selectedDate);
-      const matchesSearch = searchTerm === '' || 
-        (a.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (a.incidentNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (a.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (a.technicianName || '').toLowerCase().includes(searchTerm.toLowerCase());
+      const normalizedQuery = normalizeStr(searchTerm);
+      const matchesSearch = normalizedQuery === '' || 
+        normalizeStr(a.title).includes(normalizedQuery) ||
+        normalizeStr(a.incidentNumber).includes(normalizedQuery) ||
+        normalizeStr(a.description).includes(normalizedQuery) ||
+        normalizeStr(a.code).includes(normalizedQuery) ||
+        normalizeStr(a.cause).includes(normalizedQuery) ||
+        normalizeStr(a.technicianName).includes(normalizedQuery) ||
+        (a.participants || []).some(p => normalizeStr(p).includes(normalizedQuery));
         
       const matchesTechnician = selectedTechnician === 'todos' || 
         (a.technicianName || '') === selectedTechnician || 
@@ -233,106 +344,32 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
   const sortedActivities = filteredActivities;
 
   const dailyMetrics = React.useMemo(() => {
-    const total = sortedActivities.reduce((acc, a) => acc + (a.totalHours || (a.overtimeHours || 0) + 8), 0);
-    const stAcumulado = sortedActivities.reduce((acc, a) => {
-      const st = (a.overtimeHours || 0);
-      return acc + (st > 0 ? st : 0);
-    }, 0);
-    const dfAcumulado = Math.abs(sortedActivities.reduce((acc, a) => {
-      const st = (a.overtimeHours || 0);
-      return acc + (st < 0 ? st : 0);
-    }, 0));
-    return { total, stAcumulado, dfAcumulado };
-  }, [sortedActivities]);
+    return calculateMetrics(sortedActivities, selectedTechnician);
+  }, [sortedActivities, selectedTechnician]);
 
   const weeklyMetrics = React.useMemo(() => {
-    const total = weeklyActivities.reduce((acc, a) => acc + (a.totalHours || (a.overtimeHours || 0) + 8), 0);
-    const stAcumulado = weeklyActivities.reduce((acc, a) => {
-      const r_st = (a.overtimeHours || 0);
-      return acc + (r_st > 0 ? r_st : 0);
-    }, 0);
-    const dfAcumulado = Math.abs(weeklyActivities.reduce((acc, a) => {
-      const r_st = (a.overtimeHours || 0);
-      return acc + (r_st < 0 ? r_st : 0);
-    }, 0));
-    return { total, stAcumulado, dfAcumulado };
-  }, [weeklyActivities]);
-
-  // Shared helper for calculating true hours (with getBounds logic)
-  const calculateExcesoPersonasForActivities = (acts: Activity[], considerDate: boolean) => {
-    const dailyHoursForTech: Record<string, { minStart: number, maxEnd: number, hasPause: boolean, titles: string[], name: string, dateObj: Date | null }> = {};
-    
-    acts.forEach(a => {
-      let dateKey = 'same_day';
-      let dateObj: Date | null = null;
-      if (considerDate) {
-        if (a.date && typeof a.date.toDate === 'function') {
-          dateObj = a.date.toDate();
-          dateKey = dateObj!.toISOString().split('T')[0];
-        } else if (a.date) {
-          try {
-            dateObj = new Date(a.date as any);
-            dateKey = dateObj.toISOString().split('T')[0];
-          } catch {
-            dateKey = 'unknown';
-          }
-        }
-      }
-
-      const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
-      const { minStart, maxEnd } = getActivityBounds(a);
-
-      parts.forEach(p => {
-        const key = considerDate ? `${dateKey}_${p}` : p;
-        if (!dailyHoursForTech[key]) {
-          dailyHoursForTech[key] = { minStart: Infinity, maxEnd: -Infinity, hasPause: false, titles: [], name: p, dateObj };
-        }
-        
-        if (a.hasPause === 'SI') {
-          dailyHoursForTech[key].hasPause = true;
-        }
-
-        if (minStart !== Infinity) {
-          dailyHoursForTech[key].minStart = Math.min(dailyHoursForTech[key].minStart, minStart);
-        }
-        if (maxEnd !== -Infinity) {
-          dailyHoursForTech[key].maxEnd = Math.max(dailyHoursForTech[key].maxEnd, maxEnd);
-        }
-        if (!dailyHoursForTech[key].titles.includes(a.title)) {
-           dailyHoursForTech[key].titles.push(a.title);
-        }
-      });
-    });
-
-    const items: Array<{ name: string, total: number, titles: string[], date: Date | null }> = [];
-    Object.values(dailyHoursForTech).forEach(dayData => {
-       const totalRealHours = calculateRealHours(dayData.minStart, dayData.maxEnd, dayData.hasPause);
-       if (totalRealHours > 10.0) {
-         items.push({
-           name: dayData.name,
-           total: totalRealHours,
-           titles: dayData.titles,
-           date: dayData.dateObj
-         });
-       }
-    });
-
-    if (considerDate) {
-       items.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
-    }
-
-    return { count: items.length, items };
-  };
+    return calculateMetrics(weeklyActivities, selectedTechnician);
+  }, [weeklyActivities, selectedTechnician]);
 
   const dayExcesoData = React.useMemo(() => {
-    return calculateExcesoPersonasForActivities(sortedActivities, false);
-  }, [sortedActivities]);
+    const rawExceso = calculateExcesoPersonas(sortedActivities, false);
+    if (selectedTechnician !== 'todos') {
+      const filteredItems = rawExceso.items.filter(item => (item.name || '').toLowerCase() === selectedTechnician.toLowerCase());
+      return { count: filteredItems.length, items: filteredItems };
+    }
+    return rawExceso;
+  }, [sortedActivities, selectedTechnician]);
   
   const excesoPersonas = dayExcesoData.count;
 
   const weekExcesoData = React.useMemo(() => {
-    return calculateExcesoPersonasForActivities(weeklyActivities, true);
-  }, [weeklyActivities]);
+    const rawExceso = calculateExcesoPersonas(weeklyActivities, true);
+    if (selectedTechnician !== 'todos') {
+      const filteredItems = rawExceso.items.filter(item => (item.name || '').toLowerCase() === selectedTechnician.toLowerCase());
+      return { count: filteredItems.length, items: filteredItems };
+    }
+    return rawExceso;
+  }, [weeklyActivities, selectedTechnician]);
   
   const excesoPersonasSemanal = weekExcesoData.count;
 
@@ -371,11 +408,11 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
         { header: 'Hora Entrada Tarde', key: 'he_t', width: 22 },
         { header: 'Hora Salida Tarde', key: 'hs_t', width: 22 },
         { header: 'HORAS', key: 'horas', width: 10 },
-        { header: 'JUSTIFIQUE', key: 'justifique', width: 45 }
+        { header: 'JUSTIFIQUE', key: 'justifique', width: 50 }
       ];
 
       const headerRow = sheet.getRow(1);
-      headerRow.height = 30;
+      headerRow.height = 24;
 
       headerRow.eachCell((cell, colNumber) => {
         cell.font = { bold: true, color: { argb: colNumber === 1 || colNumber === 15 ? 'FF000000' : 'FFFFFFFF' }, size: 9, name: 'Arial' };
@@ -384,7 +421,6 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
         let fgColor = 'FF4F81BD'; // Blue 
         
         if (colNumber === 1) fgColor = 'FFF79646'; // AREA (Orange)
-        if (colNumber >= 9 && colNumber <= 13) fgColor = 'FF5B9BD5'; // Horarios (Lighter Blue)
         if (colNumber === 15) fgColor = 'FFFCD5B4'; // JUSTIFIQUE (Peach)
 
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fgColor } };
@@ -406,7 +442,11 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
       });
 
       sortedActs.forEach(a => {
-        const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
+        let parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
+        
+        if (selectedTechnician !== 'todos') {
+          parts = parts.filter(p => (p || '').toLowerCase().trim() === selectedTechnician.toLowerCase().trim());
+        }
         
         parts.forEach(p => {
           const techMatch = technicians.find(t => (t.name || '').toLowerCase() === (p || '').toLowerCase());
@@ -455,12 +495,16 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
           });
 
           row.getCell(3).alignment = { horizontal: 'left', vertical: 'middle' };
-          row.getCell(15).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
-          row.height = Math.max(15, Math.ceil((row.getCell(15).text?.length || 10) / 45) * 15);
+          const justCell = row.getCell('justifique');
+          justCell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
         });
       });
 
       sheet.columns.forEach(column => {
+        if (column.key === 'justifique') {
+          column.width = 50;
+          return;
+        }
         let maxLength = 0;
         column.eachCell({ includeEmpty: true }, cell => {
           const columnLength = cell.value ? cell.value.toString().length : 0;
@@ -471,22 +515,18 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
         column.width = maxLength < 12 ? 12 : maxLength + 4;
       });
 
+      // 1. Aplicar factor de optimización estándar para la columna de Justificación
+      optimizarAlturasJustificacionSGA(sheet);
+
       const buffer = await workbook.xlsx.writeBuffer();
       
-      const dayName = format(new Date(), 'EEEE', { locale: es });
-      const day = format(new Date(), 'dd');
-      const monthName = format(new Date(), 'MMMM', { locale: es });
-      const year = format(new Date(), 'yyyy');
-      const dataDate = format(selectedDate, 'dd-MM-yyyy');
-      
-      let fileName = '';
-      if (period === 'monthly') {
-        fileName = `Sobretiempo_CANTV_${day}_${monthName}_${year}_Mes_${format(selectedDate, 'MMMM_yyyy', { locale: es })}.xlsx`;
-      } else if (period === 'weekly') {
-        fileName = `Sobretiempo_CANTV_${day}_${monthName}_${year}_Semana_De_${format(startOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}_AL_${format(endOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}.xlsx`;
-      } else {
-        fileName = `Sobretiempo_CANTV_${day}_${monthName}_${year}_${dayName}_Generado_De_${dataDate}.xlsx`;
-      }
+      const fileName = obtenerNombreArchivoExcel({
+        tipoDoc: 'Sobretiempo',
+        frecuencia: period === 'daily' ? 'diario' : period === 'weekly' ? 'semanal' : 'mensual',
+        fechaFiltro: selectedDate,
+        fechaFiltroFin: period === 'weekly' ? endOfWeek(selectedDate, { weekStartsOn: 1 }) : undefined,
+        tecnicoSeleccionado: selectedTechnician
+      });
       
       saveAs(new Blob([buffer]), fileName);
     } catch (err: any) {
@@ -563,20 +603,17 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
       });
 
       cols.push(
-        { header: 'DOCUMENTACION', key: 'doc', width: 15 },
-        { header: 'SOBRETIEMPO', key: 'st', width: 18 },
+        { header: 'SOBRETIEMPO', key: 'st', width: 16 },
         { header: 'DEFICIT', key: 'deficit', width: 15 },
         { header: 'Hora Entrada Mañana', key: 'he_m', width: 22 },
         { header: 'Hora Salida Mañana', key: 'hs_m', width: 22 },
         { header: 'Pausa', key: 'pausa', width: 10 },
         { header: 'Hora Entrada Tarde', key: 'he_t', width: 22 },
         { header: 'Hora Salida Tarde', key: 'hs_t', width: 22 },
-        { header: 'JUSTIFIQUE', key: 'justifique', width: 45 },
         { header: 'HORAS', key: 'horas', width: 10 },
         { header: 'MANEJO', key: 'manejo', width: 15 },
         { header: 'VIATICOS', key: 'viaticos', width: 12 },
-        { header: 'MONTO VIATICOS (Bs.)', key: 'monto_viaticos', width: 22 },
-        { header: 'DEPARTAMENTO', key: 'dpto', width: 15 }
+        { header: 'MONTO VIATICOS (Bs.)', key: 'monto_viaticos', width: 22 }
       );
 
       sheet.columns = cols;
@@ -594,6 +631,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
 
       const styleHeader = (rowNum: number) => {
         const row = sheet.getRow(rowNum);
+        row.height = 24;
         row.eachCell((cell) => {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00B0F0' } };
           cell.font = { bold: true, size: 9, name: 'Arial', color: { argb: 'FF000000' } };
@@ -634,7 +672,6 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
           fecha: fechaValue,
           flota: a.fleet || '',
           incidente: a.incidentNumber ? ` ${a.incidentNumber} - ${a.title}` : a.title,
-          doc: '',
           st: a.overtimeHours && a.overtimeHours > 0 ? `${formatHours(a.overtimeHours)}` : 'no',
           deficit: typeof a.overtimeHours === 'number' && a.overtimeHours < 0 ? `${formatHours(a.overtimeHours)}` : 'no',
           he_m: formatTime24h(a.startTimeMorning || '', '07:30'),
@@ -642,12 +679,10 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
           pausa: a.hasPause || 'SI',
           he_t: formatTime24h(a.startTimeAfternoon || '', '12:45'),
           hs_t: formatTime24h(a.endTimeAfternoon || a.endTime || '', '16:00'),
-          justifique: a.justification || ((a.overtimeHours || 0) === 0 ? 'Jornada estándar sin sobretiempo ni déficit.' : 'No justificado.'),
           horas: a.totalHours ? formatHours(a.totalHours) : '',
           manejo: a.driver || '',
           viaticos: a.hasPerDiem ? 'si' : 'no',
-          monto_viaticos: a.hasPerDiem ? Number(a.perDiemAmount || 0).toFixed(2) : '0.00',
-          dpto: ''
+          monto_viaticos: a.hasPerDiem ? Number(a.perDiemAmount || 0).toFixed(2) : '0.00'
         };
 
         const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
@@ -676,6 +711,8 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
             cell.font = { size: 9, name: 'Arial', bold: true };
           }
         });
+
+        row.height = 18;
       });
 
       sheet.columns.forEach(column => {
@@ -689,21 +726,39 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
         column.width = maxLength < 12 ? 12 : maxLength + 4;
       });
 
-      const buffer = await workbook.xlsx.writeBuffer();
-      const dayName = format(new Date(), 'EEEE', { locale: es });
-      const day = format(new Date(), 'dd');
-      const monthName = format(new Date(), 'MMMM', { locale: es });
-      const year = format(new Date(), 'yyyy');
-      const dataDate = format(selectedDate, 'dd-MM-yyyy');
-      
-      let fileName = '';
-      if (period === 'monthly') {
-        fileName = `Planificacion_CANTV_${day}_${monthName}_${year}_Mes_${format(selectedDate, 'MMMM_yyyy', { locale: es })}.xlsx`;
-      } else if (period === 'weekly') {
-        fileName = `Planificacion_CANTV_${day}_${monthName}_${year}_Semana_De_${format(startOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}_AL_${format(endOfWeek(selectedDate, {weekStartsOn: 1}), 'dd-MM')}.xlsx`;
-      } else {
-        fileName = `Planificacion_CANTV_${day}_${monthName}_${year}_${dayName}_Generado_De_${dataDate}.xlsx`;
+      // 1. Obtener la Fila 2 (donde se encuentran físicamente los títulos de las columnas)
+      const filaCabecera = sheet.getRow(2);
+      let indiceColumnaSobretiempo = -1;
+
+      // 2. Escanear celda por celda de la fila para encontrar la columna correcta
+      filaCabecera.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        const valorCelda = cell.value ? cell.value.toString().trim().toUpperCase() : '';
+        if (valorCelda === 'SOBRETIEMPO') {
+          indiceColumnaSobretiempo = colNumber;
+        }
+      });
+
+      // 3. Si se localiza la columna, forzar el ancho de seguridad y alineación
+      if (indiceColumnaSobretiempo !== -1) {
+        const columna = sheet.getColumn(indiceColumnaSobretiempo);
+        // Establecemos un ancho de 20 para dar espacio de respiración en el margen derecho (R)
+        columna.width = 20;
+        columna.alignment = {
+          vertical: 'middle',
+          horizontal: 'center',
+          wrapText: true
+        };
       }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      
+      const fileName = obtenerNombreArchivoExcel({
+        tipoDoc: 'Planificacion',
+        frecuencia: period === 'daily' ? 'diario' : period === 'weekly' ? 'semanal' : 'mensual',
+        fechaFiltro: selectedDate,
+        fechaFiltroFin: period === 'weekly' ? endOfWeek(selectedDate, { weekStartsOn: 1 }) : undefined,
+        tecnicoSeleccionado: selectedTechnician
+      });
       
       saveAs(new Blob([buffer]), fileName);
     } catch (err: any) {
@@ -724,10 +779,6 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
             <h2 className="text-base sm:text-lg lg:text-xl font-display font-black text-slate-900 tracking-tight uppercase truncate">Planilla Inteligente</h2>
             <div className="flex flex-row sm:flex-wrap items-center gap-1.5 sm:gap-2 mt-0.5 overflow-hidden">
               <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase tracking-wider truncate">Formato Excel Estándar</p>
-              <div className="hidden sm:block w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-slate-300 shrink-0" />
-              <p className="text-[8px] sm:text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-1 shrink-0 truncate">
-                Central Maracay 4357
-              </p>
             </div>
           </div>
         </div>
@@ -924,7 +975,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                 <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
                   Código
                 </th>
-                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap min-w-[180px] w-[180px]">
                   Causa
                 </th>
                 <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
@@ -951,7 +1002,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                 <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
                   Horas Totales
                 </th>
-                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
+                <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap min-w-[260px] w-[260px]">
                   Justificación
                 </th>
                 <th className="px-6 py-4 border border-slate-300 text-[10px] font-black text-slate-900 uppercase tracking-widest text-center whitespace-nowrap">
@@ -999,14 +1050,12 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                         {activity.code || 'HORA'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 border border-slate-300">
-                      <div className="max-w-[150px]">
-                        <ExpandableText 
-                          text={activity.cause || '---'} 
-                          className="text-xs text-slate-900 leading-relaxed font-black uppercase tracking-wide"
-                          maxLength={35}
-                        />
-                      </div>
+                    <td className="px-6 py-4 border border-slate-300 min-w-[180px] w-[180px]">
+                      <ExpandableText 
+                        text={activity.cause || '---'} 
+                        className="text-xs text-slate-900 leading-relaxed font-black uppercase tracking-wide"
+                        maxLength={50}
+                      />
                     </td>
                     <td className="px-6 py-4 border border-slate-300 min-w-[320px]">
                       <p className="text-sm font-black text-slate-900 mb-1.5">{activity.title}</p>
@@ -1020,39 +1069,51 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                     </td>
                     <td className="px-6 py-4 border border-slate-300">
                       <div className="flex flex-row items-stretch gap-2.5 max-w-[480px] overflow-x-auto py-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
-                        {activity.participants?.map((p, pIdx) => {
-                          const techMatch = technicians.find(t => t.name === p);
-                          const isDefinitiveBaja = techMatch?.status?.toLowerCase().trim() === 'inactivo' || techMatch?.status?.toLowerCase().trim() === 'baja';
-                          return (
-                            <div 
-                              key={`activity-${activity.id}-participant-${pIdx}`} 
-                              className={cn(
-                                "flex flex-col justify-between px-2.5 py-1.5 rounded shadow-sm border min-w-[130px] shrink-0 transition-opacity",
-                                isDefinitiveBaja 
-                                  ? "bg-slate-100 border-slate-300/60 opacity-60 grayscale saturate-50 italic" 
-                                  : "bg-slate-200/60 border-slate-300/40"
-                              )}
-                            >
-                              <span className="text-xs font-extrabold text-slate-900 leading-tight truncate flex items-center justify-between gap-1" title={p.toUpperCase()}>
-                                <span className="truncate">{p.toUpperCase()}</span>
-                                {isDefinitiveBaja && (
-                                  <span className="text-[9px] font-black tracking-wide text-rose-600 not-italic shrink-0 ml-1 bg-rose-50 px-1 py-0.5 rounded leading-none border border-rose-100/50">(Baja)</span>
+                        {(() => {
+                          const listUids = inicializarTecnicosIdsSeguro(activity, technicians);
+
+                          // Unificar duplicados
+                          const uniqueUids = Array.from(new Set(listUids));
+
+                          if (uniqueUids.length === 0) {
+                            return <span className="text-xs text-slate-400">N/A</span>;
+                          }
+
+                          return uniqueUids.map((uid, pIdx) => {
+                            const techInfo = obtenerDatosUsuarioReactivo(uid as string, technicians);
+                            const isDefinitiveBaja = techInfo.isDefinitiveBaja;
+
+                            return (
+                              <div 
+                                key={`activity-${activity.id}-participant-${uid}-${pIdx}`} 
+                                className={cn(
+                                  "flex flex-col justify-between px-2.5 py-1.5 rounded shadow-sm border min-w-[130px] shrink-0 transition-opacity",
+                                  isDefinitiveBaja 
+                                    ? "bg-slate-100 border-slate-300/60 opacity-60 grayscale saturate-50 italic" 
+                                    : "bg-slate-200/60 border-slate-300/40"
                                 )}
-                              </span>
-                              <div className="mt-1 flex flex-col">
-                                <span className={cn("text-[10px] font-mono font-bold", isDefinitiveBaja ? "text-slate-400" : "text-brand-blue")}>
-                                  P00: {techMatch?.employeeId || 'S/N'}
+                              >
+                                <span className="text-xs font-extrabold text-slate-900 leading-tight truncate flex items-center justify-between gap-1" title={techInfo.nombreCompleto.toUpperCase()}>
+                                  <span className="truncate">{techInfo.nombreCompleto.toUpperCase()}</span>
+                                  {isDefinitiveBaja && (
+                                    <span className="text-[9px] font-black tracking-wide text-rose-600 not-italic shrink-0 ml-1 bg-rose-50 px-1 py-0.5 rounded leading-none border border-rose-100/50">(Baja)</span>
+                                  )}
                                 </span>
-                                <span className={cn("text-[10px] font-mono font-bold mt-0.5 leading-none", isDefinitiveBaja ? "text-slate-400" : "text-brand-blue")}>
-                                  C.I: {techMatch?.idCard || 'S/N'}
-                                </span>
-                                <span className="text-[9px] font-mono text-slate-800 font-extrabold uppercase tracking-wider mt-0.5">
-                                  {techMatch?.department || techMatch?.specialty || 'DATOS'}
-                                </span>
+                                <div className="mt-1 flex flex-col">
+                                  <span className={cn("text-[10px] font-mono font-bold", isDefinitiveBaja ? "text-slate-400" : "text-brand-blue")}>
+                                    P00: {techInfo.carnet}
+                                  </span>
+                                  <span className={cn("text-[10px] font-mono font-bold mt-0.5 leading-none", isDefinitiveBaja ? "text-slate-400" : "text-brand-blue")}>
+                                    C.I: {techInfo.cedula}
+                                  </span>
+                                  <span className="text-[9px] font-mono text-slate-800 font-extrabold uppercase tracking-wider mt-0.5">
+                                    {techInfo.departamento}
+                                  </span>
+                                </div>
                               </div>
-                            </div>
-                          );
-                        }) || <span className="text-xs text-slate-400">N/A</span>}
+                            );
+                          });
+                        })()}
                       </div>
                     </td>
                     <td className="px-6 py-4 border border-slate-300 text-center">
@@ -1096,14 +1157,12 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                         {activity.totalHours ? `${formatHours(activity.totalHours)}` : '-'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 border border-slate-300">
-                      <div className="max-w-[180px]">
-                        <ExpandableText 
-                          text={activity.justification || (((activity.overtimeHours || 0) === 0) ? '' : 'No justificado.')} 
-                          className="text-xs text-slate-900 font-bold leading-relaxed italic"
-                          maxLength={35}
-                        />
-                      </div>
+                    <td className="px-6 py-4 border border-slate-300 min-w-[260px] w-[260px]">
+                      <ExpandableText 
+                        text={activity.justification || (((activity.overtimeHours || 0) === 0) ? '' : 'No justificado.')} 
+                        className="text-xs text-slate-900 font-bold leading-relaxed italic"
+                        maxLength={80}
+                      />
                     </td>
                     <td className="px-6 py-4 border border-slate-300 text-center">
                       {activity.hasPerDiem ? (
@@ -1208,7 +1267,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                         <ExpandableText 
                           text={activity.cause} 
                           className="text-[9px] text-slate-700 font-bold leading-relaxed italic uppercase"
-                          maxLength={35}
+                          maxLength={50}
                         />
                       </div>
                     )}
@@ -1218,7 +1277,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                         <ExpandableText 
                            text={activity.justification} 
                            className="text-[9px] text-slate-500 leading-relaxed italic"
-                           maxLength={35}
+                           maxLength={80}
                         />
                       </div>
                     )}
@@ -1382,7 +1441,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                 </div>
                 <span className="text-lg font-display font-black text-white leading-none flex items-baseline gap-1">
                   <span>{excesoPersonas}</span>
-                  <span className="text-[10px] font-bold font-sans text-red-400 uppercase tracking-widest">{excesoPersonas === 0 ? 'casos' : excesoPersonas === 1 ? 'caso' : 'alertas'}</span>
+                  <span className="text-[10px] font-bold font-sans text-red-400 uppercase tracking-widest">{excesoPersonas === 1 ? 'caso' : 'casos'}</span>
                 </span>
               </div>
             </button>
@@ -1412,10 +1471,10 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
         {/* Sección Semanal */}
         <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center p-4 lg:p-5 bg-slate-800/20 gap-4 lg:gap-6 w-full">
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 lg:gap-6 w-full xl:flex-1 min-w-0 sm:items-center">
-            <div className="col-span-2 sm:col-span-1 flex flex-col items-start border-b sm:border-b-0 pb-2 sm:pb-0 border-slate-800/60 xl:border-r xl:pr-6 xl:border-slate-800 sm:py-1">
+            <div className="col-span-2 sm:col-span-1 flex flex-col items-start border-b sm:border-b-0 pb-2 sm:pb-0 border-slate-800/60 xl:border-r xl:pr-6 xl:border-slate-800 sm:py-1 min-w-[90px] md:min-w-[110px] shrink-0">
                <span className="text-[10px] font-black text-brand-blue uppercase tracking-widest mb-1">Semana</span>
-               <span className="text-sm font-bold text-slate-200 whitespace-nowrap">
-                 {formatDateSpanish(startOfWeek(selectedDate, {weekStartsOn: 1}), 'dd MMM')} - {formatDateSpanish(endOfWeek(selectedDate, {weekStartsOn: 1}), 'dd MMM')}
+               <span className="text-xs md:text-sm font-black text-white tracking-tight whitespace-nowrap">
+                 {formatearRangoSemanal(startOfWeek(selectedDate, {weekStartsOn: 1}), endOfWeek(selectedDate, {weekStartsOn: 1}))}
                </span>
             </div>
             
@@ -1460,7 +1519,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                 </div>
                 <span className="text-lg font-display font-black text-white leading-none flex items-baseline gap-1">
                   <span>{excesoPersonasSemanal}</span>
-                  <span className="text-[10px] font-bold font-sans text-red-400 uppercase tracking-widest">{excesoPersonasSemanal === 0 ? 'casos' : excesoPersonasSemanal === 1 ? 'caso' : 'alertas'}</span>
+                  <span className="text-[10px] font-bold font-sans text-red-400 uppercase tracking-widest">{excesoPersonasSemanal === 1 ? 'caso' : 'casos'}</span>
                 </span>
               </div>
             </button>
@@ -1500,7 +1559,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                     <span className="flex items-center gap-2">
                       Jornadas Mayores a 10h
                       <span className="text-xs font-bold font-sans bg-rose-50 border border-rose-100 text-rose-600 px-2 py-0.5 rounded-full">
-                        {excesoPersonas} {excesoPersonas === 0 ? 'casos' : excesoPersonas === 1 ? 'caso' : 'alertas'}
+                        {excesoPersonas} {excesoPersonas === 1 ? 'caso' : 'casos'}
                       </span>
                     </span>
                   )}
@@ -1534,9 +1593,14 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                       return items.map((item, idx) => (
                         <tr key={`summary-exceso-${idx}`} className="hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-4">
-                            <div className="text-sm font-bold text-slate-900 mb-1 leading-tight">{capitalizeSentence(item.name)}</div>
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                               {item.titles.slice(0, 2).join(', ')}{item.titles.length > 2 ? '...' : ''}
+                            <ExpandableActivityTitle titles={item.titles} />
+                            <div className="flex text-xs text-slate-705 font-bold gap-4 mt-1.5 flex-wrap">
+                              <span className="flex items-center gap-1.5 shrink-0 leading-none">
+                                <Calendar size={12} className="text-blue-600 opacity-100 shrink-0" /> {formatDateSpanish(item.date, 'dd MMM').toUpperCase()}
+                              </span>
+                              <span className="flex items-center gap-1.5 whitespace-normal leading-none max-w-full truncate">
+                                <User size={12} className="text-slate-600 opacity-100 shrink-0" /> {capitalizeSentence(item.name.split(' ')[0])}
+                              </span>
                             </div>
                           </td>
                           <td className="px-6 py-4 text-right">
@@ -1570,9 +1634,14 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                     return (
                       <tr key={`summary-row-${idx}`} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
-                          <div className="text-sm font-bold text-slate-900 mb-1 leading-tight">{activity.title || 'Sin Título'}</div>
-                          <div className="text-[10px] font-bold text-slate-500">
-                            {activity.participants && activity.participants.length > 0 ? activity.participants.map(p => p.split(' ')[0]).join(', ') : activity.technicianName}
+                            <ExpandableActivityTitle title={activity.title} />
+                          <div className="flex text-xs text-slate-705 font-bold gap-4 mt-1.5 flex-wrap">
+                            <span className="flex items-center gap-1.5 shrink-0 leading-none">
+                              <Calendar size={12} className="text-blue-600 opacity-100 shrink-0" /> {formatDateSpanish(activity.date.toDate ? activity.date.toDate() : new Date(activity.date as any), 'dd MMM').toUpperCase()}
+                            </span>
+                            <span className="flex items-center gap-1.5 whitespace-normal leading-none max-w-full truncate">
+                              <User size={12} className="text-slate-600 opacity-100 shrink-0" /> {activity.participants && activity.participants.length > 0 ? activity.participants.map((p: string) => capitalizeSentence(p.split(' ')[0])).join(', ') : capitalizeSentence(activity.technicianName)}
+                            </span>
                           </div>
                         </td>
                         <td className="px-6 py-4 text-right">
@@ -1617,7 +1686,7 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                     <span className="flex items-center gap-2">
                       Jornadas Mayores a 10h (Semanal)
                       <span className="text-xs font-bold font-sans bg-rose-50 border border-rose-100 text-rose-600 px-2 py-0.5 rounded-full">
-                        {excesoPersonasSemanal} {excesoPersonasSemanal === 0 ? 'casos' : excesoPersonasSemanal === 1 ? 'caso' : 'alertas'}
+                        {excesoPersonasSemanal} {excesoPersonasSemanal === 1 ? 'caso' : 'casos'}
                       </span>
                     </span>
                   )}
@@ -1651,18 +1720,14 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                       return items.map((item, idx) => (
                         <tr key={`weekly-exceso-${idx}`} className="hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-4">
-                            <div className="text-sm font-bold text-slate-800 whitespace-normal leading-snug">
-                              {capitalizeSentence(item.name)}
-                            </div>
-                            <div className="flex flex-col gap-1 mt-1.5">
-                              <div className="flex items-center gap-1.5 flex-wrap text-[10px] font-bold text-slate-400">
-                                <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase shrink-0 leading-none flex items-center gap-1">
-                                  📅 {formatDateSpanish(item.date, 'dd MMM')}
-                                </span>
-                                <span className="whitespace-normal">
-                                  {item.titles.map(t => capitalizeSentence(!t || t.trim().toLowerCase() === 's' ? 'Mantenimiento Preventivo de Enlace' : t)).join(', ')}
-                                </span>
-                              </div>
+                            <ExpandableActivityTitle titles={item.titles} />
+                            <div className="flex text-xs text-slate-705 font-bold gap-4 mt-1.5 flex-wrap">
+                              <span className="flex items-center gap-1.5 shrink-0 leading-none">
+                                <Calendar size={12} className="text-blue-600 opacity-100 shrink-0" /> {formatDateSpanish(item.date, 'dd MMM').toUpperCase()}
+                              </span>
+                              <span className="flex items-center gap-1.5 whitespace-normal leading-none max-w-full truncate">
+                                <User size={12} className="text-slate-600 opacity-100 shrink-0" /> {capitalizeSentence(item.name.split(' ')[0])}
+                              </span>
                             </div>
                           </td>
                           <td className="px-6 py-4 text-right">
@@ -1700,18 +1765,14 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                     return (
                       <tr key={`weekly-summary-row-${idx}`} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
-                          <div className="text-sm font-bold text-slate-800 whitespace-normal leading-snug">
-                            {capitalizeSentence(actTitle)}
-                          </div>
-                          <div className="flex flex-col gap-1 mt-1.5">
-                            <div className="flex items-center gap-1.5 flex-wrap text-[10px] font-bold text-slate-400">
-                              <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase shrink-0 leading-none flex items-center gap-1">
-                                📅 {formatDateSpanish(activity.date.toDate ? activity.date.toDate() : new Date(activity.date as any), 'dd MMM')}
-                              </span>
-                              <span className="whitespace-normal">
-                                👤 {activity.participants && activity.participants.length > 0 ? activity.participants.map(p => capitalizeSentence(p.split(' ')[0])).join(', ') : capitalizeSentence(activity.technicianName)}
-                              </span>
-                            </div>
+                            <ExpandableActivityTitle title={actTitle} />
+                          <div className="flex text-xs text-slate-705 font-bold gap-4 mt-1.5 flex-wrap">
+                            <span className="flex items-center gap-1.5 shrink-0 leading-none">
+                              <Calendar size={12} className="text-blue-600 opacity-100 shrink-0" /> {formatDateSpanish(activity.date.toDate ? activity.date.toDate() : new Date(activity.date as any), 'dd MMM').toUpperCase()}
+                            </span>
+                            <span className="flex items-center gap-1.5 whitespace-normal leading-none max-w-full truncate">
+                              <User size={12} className="text-slate-600 opacity-100 shrink-0" /> {activity.participants && activity.participants.length > 0 ? activity.participants.map((p: string) => capitalizeSentence(p.split(' ')[0])).join(', ') : capitalizeSentence(activity.technicianName.split(' ')[0])}
+                            </span>
                           </div>
                         </td>
                         <td className="px-6 py-4 text-right">

@@ -20,5 +20,20 @@ export default defineConfig(({mode}) => {
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('exceljs')) return 'excel-vendor';
+              if (id.includes('recharts')) return 'charts-vendor';
+              if (id.includes('jspdf') || id.includes('pdfmake')) return 'pdf-vendor';
+              if (id.includes('firebase')) return 'firebase-vendor';
+              return 'vendor';
+            }
+          },
+        },
+      },
+    },
   };
 });

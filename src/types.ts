@@ -32,6 +32,7 @@ export interface Activity {
   technicianName: string;
   adminId?: string; // UID of the user who owns/created this record
   participants?: string[];
+  tecnicosIds?: number[];
   date: Timestamp;
   createdAt: Timestamp;
   notes?: string[];
@@ -76,6 +77,14 @@ export interface Technician {
   department?: string;
   phoneNumber?: string;
   status: string;
+  photoURL?: string;
+  tallaBotas?: string;
+  tallaCamisa?: string;
+  tallaPantalon?: string;
+  fechaNacimiento?: string;
+  fechaIngreso?: string;
+  direccion?: string;
+  idSecuencial?: number;
   createdAt: Timestamp;
   isDeleted?: boolean;
   deletedAt?: Timestamp;

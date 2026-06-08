@@ -10,6 +10,21 @@ interface TechnicianFormProps {
   technicians: Technician[];
 }
 
+const formatCapitalized = (text: string) => {
+  return text
+    .split(' ')
+    .map(word => {
+      if (word.length === 0) return '';
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+};
+
+const formatSentenceCase = (text: string) => {
+  if (!text) return "";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
+
 export default function TechnicianForm({ onClose, onSubmit, initialData, technicians }: TechnicianFormProps) {
   const predefinedStatuses = ['activo', 'inactivo', 'baja', 'reposo', 'vacaciones'];
   
@@ -33,14 +48,21 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
     customStatus: isCustomStatus ? (initialData?.status || '') : '',
     email: initialData?.email || '',
     systemRole: initialData?.role || 'tecnico',
-    password: ''
+    password: '',
+    tallaBotas: initialData?.tallaBotas || '',
+    tallaCamisa: initialData?.tallaCamisa || '',
+    tallaPantalon: initialData?.tallaPantalon || '',
+    fechaNacimiento: initialData?.fechaNacimiento || '',
+    fechaIngreso: initialData?.fechaIngreso || '',
+    direccion: initialData?.direccion || ''
   });
   
   const [errorPrompt, setErrorPrompt] = React.useState('');
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = React.useState(false);
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = React.useState(false);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorPrompt('');
     
@@ -49,8 +71,8 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
     // Check missing fields
     const isNew = !initialData;
     
-    if (!data.firstName || !data.lastName || !data.employeeId || !data.idCard || !data.specialty || !data.department || !data.phoneNumber || !finalStatus || !data.email || (isNew && !data.password)) {
-      setErrorPrompt('Por favor, rellene todos los campos requeridos del formulario (incluyendo el departamento).');
+    if (!data.firstName || !data.lastName || !data.employeeId || !data.idCard || !data.specialty || !data.department || !data.phoneNumber || !finalStatus || !data.email || (isNew && !data.password) || !data.fechaNacimiento || !data.fechaIngreso || !data.direccion) {
+      setErrorPrompt('Por favor, rellene todos los campos requeridos del formulario (incluyendo el departamento, fechas y dirección).');
       return;
     }
 
@@ -61,9 +83,9 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
       return;
     }
 
-    // Validation: POO exactly 6 digits
+    // Validation: P00 exactly 6 digits
     if (!/^\d{6}$/.test(data.employeeId)) {
-      setErrorPrompt('El POO / Carnet debe ser exactamente de 6 dígitos.');
+      setErrorPrompt('El P00 / CARNET debe ser exactamente de 6 dígitos.');
       return;
     }
 
@@ -110,19 +132,37 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
 
     const fullName = `${data.firstName.trim()} ${data.lastName.trim()}`;
 
-    onSubmit({
-      name: fullName,
-      employeeId: data.employeeId,
-      idCard: data.idCard,
-      specialty: data.specialty,
-      department: data.department.trim(),
-      phoneNumber: data.phoneNumber,
-      status: finalStatus,
-      email: data.email.toLowerCase().trim(),
-      role: data.systemRole,
-      password: data.password
-    });
-    onClose();
+    try {
+      setIsSubmitting(true);
+      await onSubmit({
+        name: fullName,
+        employeeId: data.employeeId,
+        idCard: data.idCard,
+        specialty: data.specialty,
+        department: data.department.trim(),
+        phoneNumber: data.phoneNumber,
+        status: finalStatus,
+        email: data.email.toLowerCase().trim(),
+        role: data.systemRole,
+        password: data.password,
+        tallaBotas: data.tallaBotas.trim().toUpperCase(),
+        tallaCamisa: data.tallaCamisa.trim().toUpperCase(),
+        tallaPantalon: data.tallaPantalon.trim().toUpperCase(),
+        fechaNacimiento: data.fechaNacimiento,
+        fechaIngreso: data.fechaIngreso,
+        direccion: data.direccion.trim()
+      });
+      // onClose is handled by the parent if successful, but we can also call it here
+      onClose();
+    } catch (err: any) {
+      if (err.code === 'auth/email-already-in-use' || (err.message && err.message.includes('email-already-in-use'))) {
+        setErrorPrompt('Atención: El correo institucional ingresado ya se encuentra registrado. Utilice uno diferente.');
+      } else {
+        setErrorPrompt('Error al guardar: ' + (err.message || String(err)));
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -157,7 +197,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
                   required
                   type="email"
                   className="input-field"
-                  placeholder="Ej: tecnico@cantv.com.ve"
+                  placeholder="tecnico@cantv.com.ve"
                   value={data.email}
                   onChange={e => setData({ ...data, email: e.target.value })}
                 />
@@ -185,7 +225,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
 
               {/* ROL EN EL SISTEMA (CUSTOM DROPDOWN) */}
               <div className="space-y-1 relative">
-                <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Rol en el Sistema</label>
+                <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Rol</label>
                 <button
                   type="button"
                   onClick={() => {
@@ -230,7 +270,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
 
               {/* ESTADO ADMINISTRATIVO (CUSTOM DROPDOWN) */}
               <div className="space-y-1 relative">
-                <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Estado Administrativo</label>
+                <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Estado</label>
                 <button
                   type="button"
                   onClick={() => {
@@ -288,12 +328,47 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
                     required
                     type="text"
                     className="input-field"
-                    placeholder="Ej: Permiso no remunerado..."
+                    placeholder="Permiso no remunerado..."
                     value={data.customStatus}
                     onChange={e => setData({ ...data, customStatus: e.target.value })}
                   />
                 </div>
               )}
+
+              {/* GRID HORIZONTAL PARA FECHAS (2 Columnas) - Integrado para balancear la altura */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-100 pt-4 mt-2">
+                
+                {/* Fecha de Nacimiento */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">
+                    Fecha de Nacimiento
+                  </label>
+                  <input 
+                    type="date" 
+                    name="fechaNacimiento"
+                    value={data.fechaNacimiento}
+                    onChange={e => setData({ ...data, fechaNacimiento: e.target.value })}
+                    className="input-field"
+                    required
+                  />
+                </div>
+
+                {/* Fecha de Ingreso */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">
+                    Fecha de Ingreso
+                  </label>
+                  <input 
+                    type="date" 
+                    name="fechaIngreso"
+                    value={data.fechaIngreso}
+                    onChange={e => setData({ ...data, fechaIngreso: e.target.value })}
+                    className="input-field"
+                    required
+                  />
+                </div>
+
+              </div>
             </div>
 
             {/* COLUMNA DERECHA: DATOS PERSONALES */}
@@ -308,12 +383,12 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
                   <input
                     required
                     className="input-field"
-                    placeholder="Ej: Pedro José"
+                    placeholder="Pedro José"
                     value={data.firstName}
                     onChange={e => {
                       const value = e.target.value;
                       if (/^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]*$/.test(value)) {
-                        setData({ ...data, firstName: value });
+                        setData({ ...data, firstName: formatCapitalized(value) });
                       }
                     }}
                   />
@@ -323,12 +398,12 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
                   <input
                     required
                     className="input-field"
-                    placeholder="Ej: Pérez García"
+                    placeholder="Pérez García"
                     value={data.lastName}
                     onChange={e => {
                       const value = e.target.value;
                       if (/^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]*$/.test(value)) {
-                        setData({ ...data, lastName: value });
+                        setData({ ...data, lastName: formatCapitalized(value) });
                       }
                     }}
                   />
@@ -337,12 +412,12 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">P00 / Carnet</label>
+                  <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Carnet</label>
                   <input
                     required
                     maxLength={6}
                     className="input-field"
-                    placeholder="Ej: 107773"
+                    placeholder="107773"
                     value={data.employeeId}
                     onChange={e => {
                       const val = e.target.value.replace(/\D/g, '');
@@ -352,12 +427,12 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Cédula de Identidad</label>
+                  <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Cédula</label>
                   <input
                     required
                     maxLength={10}
                     className="input-field font-mono"
-                    placeholder="Ej: V-12345678"
+                    placeholder="V-12345678"
                     value={data.idCard}
                     onChange={e => {
                       let val = e.target.value.toUpperCase();
@@ -373,13 +448,13 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
               </div>
               
               <div className="space-y-1">
-                <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Número de Teléfono</label>
+                <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Teléfono</label>
                 <input
                   required
                   type="tel"
                   maxLength={12}
                   className="input-field font-mono"
-                  placeholder="Ej: 0414-1234567"
+                  placeholder="0414-1234567"
                   value={data.phoneNumber}
                   onChange={e => {
                     let val = e.target.value.replace(/[^\d-]/g, '');
@@ -392,14 +467,20 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
               </div>
 
               <div className="space-y-1">
-                <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Especialidad / Cargo</label>
+                <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">Cargo</label>
                 <input
                   required
                   type="text"
                   className="input-field"
-                  placeholder="Especifique el cargo o especialidad..."
+                  placeholder="Programador, Soporte Técnico"
                   value={data.specialty}
-                  onChange={e => setData({ ...data, specialty: e.target.value })}
+                  onChange={e => {
+                    let cleanValue = e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]/g, '');
+                    if (cleanValue.length > 0) {
+                      cleanValue = cleanValue.charAt(0).toUpperCase() + cleanValue.slice(1).toLowerCase();
+                    }
+                    setData({ ...data, specialty: cleanValue });
+                  }}
                 />
               </div>
 
@@ -409,9 +490,80 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
                   required
                   type="text"
                   className="input-field uppercase"
-                  placeholder="Ej: DATOS, TRANSMISION, SOPORTE, etc."
+                  placeholder="DATOS, TRANSMISION o SOPORTE"
                   value={data.department}
-                  onChange={e => setData({ ...data, department: e.target.value.toUpperCase() })}
+                  onChange={e => {
+                    let cleanValue = e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]/g, '');
+                    setData({ ...data, department: cleanValue.toUpperCase() });
+                  }}
+                />
+              </div>
+
+              {/* SECCIÓN DE DOTACIÓN Y UNIFORMES (Grid horizontal de 3 columnas) */}
+              <div className="grid grid-cols-3 gap-3 border-t border-slate-100 pt-4 mt-2">
+                {/* Talla Botas */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">
+                    Talla Botas
+                  </label>
+                  <input 
+                    type="text" 
+                    name="tallaBotas"
+                    value={data.tallaBotas}
+                    onChange={e => setData({ ...data, tallaBotas: e.target.value })}
+                    placeholder="42"
+                    className="input-field uppercase"
+                    maxLength={5}
+                  />
+                </div>
+
+                {/* Talla Camisa */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">
+                    Talla Camisa
+                  </label>
+                  <input 
+                    type="text" 
+                    name="tallaCamisa"
+                    value={data.tallaCamisa}
+                    onChange={e => setData({ ...data, tallaCamisa: e.target.value })}
+                    placeholder="M"
+                    className="input-field uppercase"
+                    maxLength={5}
+                  />
+                </div>
+
+                {/* Talla Pantalón */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">
+                    Talla Pantalón
+                  </label>
+                  <input 
+                    type="text" 
+                    name="tallaPantalon"
+                    value={data.tallaPantalon}
+                    onChange={e => setData({ ...data, tallaPantalon: e.target.value })}
+                    placeholder="32"
+                    className="input-field uppercase"
+                    maxLength={5}
+                  />
+                </div>
+              </div>
+
+              {/* DIRECCIÓN DE HABITACIÓN */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-extrabold text-slate-900 uppercase tracking-wider ml-1">
+                  Dirección
+                </label>
+                <textarea 
+                  name="direccion"
+                  value={data.direccion}
+                  onChange={e => setData({ ...data, direccion: e.target.value })}
+                  rows={2}
+                  maxLength={200}
+                  placeholder="Calle, Sector, Edificio/Casa, Maracay, Edo. Aragua"
+                  className="input-field py-2 h-16 resize-none leading-relaxed"
+                  required
                 />
               </div>
             </div>
@@ -427,9 +579,10 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
             </button>
             <button
               type="submit"
-              className="flex-1 btn-primary py-2.5 rounded-xl"
+              disabled={isSubmitting}
+              className="flex-1 btn-primary py-2.5 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {initialData ? 'Guardar Cambios' : 'Registrar'}
+              {isSubmitting ? 'Guardando...' : (initialData ? 'Guardar Cambios' : 'Registrar')}
             </button>
           </div>
         </form>

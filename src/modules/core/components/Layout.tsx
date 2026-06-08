@@ -13,7 +13,8 @@
  */
 import React from 'react';
 import { LayoutDashboard, ClipboardList, Settings, LogOut, Menu, X, Bell, User, ChevronLeft, ChevronRight, FileBarChart, Trash2, Database, MapPin, Server, Radio } from 'lucide-react';
-import { cn } from '../../../lib/utils';
+import { cn, resolverPermisosDeSesion } from '../../../lib/utils';
+import { obtenerNombreCorto } from '../../../lib/formateador';
 import NotificationCenter from '../../notifications/components/NotificationCenter';
 
 interface LayoutProps {
@@ -32,14 +33,15 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
   const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false);
   const [isProfileOpen, setIsProfileOpen] = React.useState(false);
 
-  const isAdmin = user?.role === 'admin';
-  const isManager = isAdmin || user?.role === 'supervisor';
+  const permisos = React.useMemo(() => resolverPermisosDeSesion(user?.role), [user?.role]);
+  const isAdmin = permisos.esAdmin;
+  const isManager = permisos.esAdmin || permisos.esSupervisor;
   const unreadCount = notifications.filter(n => !(n.readBy || []).includes(user?.uid)).length;
   const hasCriticalUnread = notifications.some(n => !(n.readBy || []).includes(user?.uid) && (n.type === 'fatigue_alert' || n.severity === 'high'));
 
   const navItems = [
     ...(isManager ? [{ id: 'dashboard', label: 'Panel', icon: LayoutDashboard }] : []),
-    { id: 'activities', label: user?.role === 'tecnico' ? 'Mis Labores' : 'Actividades', icon: ClipboardList },
+    { id: 'activities', label: permisos.esTecnico ? 'Mis Labores' : 'Actividades', icon: ClipboardList },
     ...(isAdmin ? [{ id: 'technicians', label: 'Personal', icon: User }] : []),
     ...(isManager ? [{ id: 'reports', label: 'Reportes', icon: FileBarChart }] : []),
     ...(isAdmin ? [{ id: 'recycle-bin', label: 'Papelera', icon: Trash2 }] : []),
@@ -62,16 +64,41 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
         </button>
 
         <div className={cn("p-6 border-b border-slate-800/60 h-24 flex items-center transition-all bg-gradient-to-b from-white/[0.02] to-transparent", isCollapsed ? "justify-center px-4" : "gap-4")}>
-          <div className={cn(
-            "bg-gradient-to-br from-brand-blue to-blue-600 rounded-2xl flex items-center justify-center text-white font-display font-black transition-all shrink-0 shadow-lg shadow-brand-blue/30 border border-blue-400/20",
-            isCollapsed ? "w-10 h-10 text-lg rounded-xl" : "w-12 h-12 text-2xl"
-          )}>
-            C
-          </div>
+          <svg 
+            className={cn(
+              "shrink-0 transition-all",
+              isCollapsed ? "w-11 h-11" : "w-9 h-9"
+            )}
+            viewBox="0 0 32 32" 
+            fill="none" 
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle cx="6" cy="26" r="2.5" fill="#FFFFFF" />
+            <path 
+              d="M6 18A8 8 0 0 1 14 26" 
+              stroke="#F2C94C" 
+              strokeWidth="2.5" 
+              strokeLinecap="round" 
+            />
+            <path 
+              d="M6 12A14 14 0 0 1 20 26" 
+              stroke="#2F80ED" 
+              strokeWidth="2.5" 
+              strokeLinecap="round" 
+            />
+            <path 
+              d="M6 6A20 20 0 0 1 26 26" 
+              stroke="#EB5757" 
+              strokeWidth="2.5" 
+              strokeLinecap="round" 
+            />
+          </svg>
           {!isCollapsed && (
-            <div className="animate-in fade-in slide-in-from-left-2 duration-300 overflow-hidden whitespace-nowrap flex flex-col justify-center">
-              <h1 className="font-display font-black text-white leading-none text-2xl tracking-tighter">CANTV <span className="opacity-40 text-[10px] font-mono font-medium align-middle ml-1">v2.6</span></h1>
-              <p className="text-[9px] text-brand-blue font-black uppercase tracking-[0.25em] mt-1 relative left-[1px]">Soporte Datos</p>
+            <div className="animate-in fade-in slide-in-from-left-2 duration-300 min-w-0 flex flex-col justify-center">
+              <span className="text-base font-extrabold text-white tracking-[0.15em] leading-none">CANTV</span>
+              <span className="text-[9px] text-slate-400 font-bold tracking-wider uppercase leading-tight mt-1.5 relative left-[1px]">
+                Departamento de Datos y Transmisión
+              </span>
             </div>
           )}
         </div>
@@ -116,14 +143,7 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
             )}
           >
             <LogOut size={isCollapsed ? 22 : 20} className="shrink-0 transition-colors group-hover:text-red-400 text-slate-500" />
-            {!isCollapsed && <span className="font-semibold text-sm animate-in fade-in slide-in-from-left-1 duration-300">Cerrar Sesión</span>}
-            
-            {isCollapsed && (
-              <div className="absolute left-full ml-4 px-3 py-2 bg-red-600 text-white text-xs font-bold rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50 shadow-xl shadow-red-900/50">
-                <div className="absolute top-1/2 -left-1 -translate-y-1/2 border-y-4 border-y-transparent border-r-4 border-r-red-600" />
-                Cerrar Sesión
-              </div>
-            )}
+            <span className={cn("font-semibold text-sm animate-in fade-in slide-in-from-left-1 duration-300", isCollapsed ? "hidden" : "inline-block")}>Cerrar Sesión</span>
           </button>
         </div>
       </aside>
@@ -131,70 +151,40 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header */}
-        <header className="h-auto min-h-[4.5rem] py-3 lg:py-0 lg:h-20 bg-white border-b border-slate-200 flex flex-wrap lg:flex-nowrap gap-3 lg:gap-4 items-center justify-between px-3 lg:px-6 sticky top-0 z-50 shadow-sm transition-all relative">
+        <header className="h-16 bg-white border-b border-slate-200 px-4 lg:px-6 flex items-center justify-between w-full sticky top-0 z-50 transition-all">
           <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-brand-blue/40 via-brand-blue to-brand-blue/40" />
           
-          {/* Left: Title & Date (Order 1) */}
-          <div className="flex items-center gap-2 lg:gap-4 shrink-0 order-1">
+          {/* SECCIÓN IZQUIERDA: TÍTULO Y FECHA (Se adapta en tamaño) */}
+          <div className="flex items-center gap-3 min-w-0">
             <button
-              className="md:hidden p-2 text-slate-600 bg-white shadow-sm border border-slate-200 rounded-xl shrink-0"
+              className="md:hidden p-1.5 text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg shrink-0 transition-colors"
               onClick={() => setIsMobileMenuOpen(true)}
             >
               <Menu size={18} />
             </button>
             <div className="flex flex-col min-w-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <h2 className="text-base lg:text-xl font-display font-black text-slate-800 tracking-tight uppercase truncate">
-                  {navItems.find(i => i.id === activeTab)?.label || activeTab}
-                </h2>
-              </div>
-              <p className="text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest truncate leading-tight mt-0.5">
-                <span className="hidden xl:inline">
-                  {new Intl.DateTimeFormat('es-VE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}
-                </span>
-                <span className="hidden sm:inline xl:hidden">
-                  {new Intl.DateTimeFormat('es-VE', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date())}
-                </span>
-                <span className="inline sm:hidden">
-                  {new Intl.DateTimeFormat('es-VE', { day: '2-digit', month: '2-digit', year: '2-digit' }).format(new Date())}
-                </span>
-              </p>
+              <h1 className="text-base lg:text-lg font-bold text-slate-800 leading-none uppercase truncate">
+                {navItems.find(i => i.id === activeTab)?.label || activeTab}
+              </h1>
+              <span className="text-[10px] text-slate-400 font-medium mt-1 uppercase hidden sm:block truncate">
+                {new Intl.DateTimeFormat('es-VE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}
+              </span>
             </div>
           </div>
 
-          {/* Center: Technical Info Bar (Order 3 on mobile, Order 2 on desktop) */}
-          <div className="hidden md:flex items-center justify-center min-w-0 flex-1 order-3 md:order-2 mt-1 md:mt-0">
-            <div className="flex items-center gap-1.5 lg:gap-2.5 xl:gap-4 px-2 xl:px-4 py-1.5 bg-slate-50 border border-slate-200 rounded-full shadow-sm shadow-slate-100 min-w-0 max-w-full transition-all">
-              <div className="flex items-center gap-1.5 shrink min-w-0">
-                <MapPin size={11} className="text-slate-400 shrink-0" />
-                <div className="flex items-baseline gap-1 min-w-0">
-                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest hidden xl:inline shrink-0">Sede:</span>
-                  <span className="text-[9px] lg:text-[10px] font-bold text-slate-700 truncate max-w-[70px] sm:max-w-[120px] md:max-w-[80px] lg:max-w-[110px] xl:max-w-none">CENTRAL MARACAY 4357</span>
-                </div>
-              </div>
-              <div className="w-[1px] h-3.5 bg-slate-200 shrink-0" />
-              <div className="flex items-center gap-1.5 shrink min-w-0">
-                <Server size={11} className="text-slate-400 shrink-0" />
-                <div className="flex items-baseline gap-1 min-w-0">
-                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest hidden xl:inline shrink-0">Unidad:</span>
-                  <span className="text-[9px] lg:text-[10px] font-bold text-slate-700 truncate max-w-[70px] sm:max-w-[120px] md:max-w-[80px] lg:max-w-[110px] xl:max-w-none">DATOS Y TRANSMISIÓN</span>
-                </div>
-              </div>
-              <div className="w-[1px] h-3.5 bg-slate-200 shrink-0" />
-              <div className="flex items-center gap-1 bg-white px-1.5 py-0.5 rounded-lg border border-slate-200 shadow-sm shrink-0">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse-slow shadow-[0_0_8px_rgba(16,185,129,0.4)] shrink-0" />
-                <span className="text-[8px] font-black text-emerald-600 uppercase tracking-widest whitespace-nowrap hidden lg:inline">
-                  Sincronizado
-                </span>
-                <span className="text-[8px] font-black text-emerald-600 uppercase tracking-widest whitespace-nowrap inline lg:hidden">
-                  Sync
-                </span>
-              </div>
+          {/* SECCIÓN DERECHA: ESTADOS Y PERFIL */}
+          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+            
+            {/* ESTADO SINCRONIZADO: Visible desde tablets (md) */}
+            <div className="hidden md:block">
+              <span className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-lg text-[10px] font-bold text-emerald-600 uppercase tracking-widest flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse-slow"></span>
+                Sincronizado
+              </span>
             </div>
-          </div>
 
-          {/* Right: Notifications & Profile (Order 2 on mobile, Order 3 on desktop) */}
-          <div className="flex items-center justify-end gap-2 lg:gap-4 shrink-0 order-2 md:order-3 w-auto">
+            {/* Notifications & Profile */}
+            <div className="flex items-center gap-1 lg:gap-2 shrink-0">
             <div className="relative shrink-0">
               <button 
                 onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
@@ -234,27 +224,24 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
               )}
             </div>
             
-            <div className="h-6 lg:h-8 w-px bg-slate-200 hidden sm:block shrink-0"></div>
-            
-            <div className="relative shrink-0">
+            <div className="relative shrink-0 ml-1 sm:ml-4 border-l border-slate-100 pl-2 sm:pl-4">
               <button 
                 onClick={() => setIsProfileOpen(!isProfileOpen)}
-                className={cn(
-                  "flex items-center gap-2 sm:gap-3 bg-white pl-2 sm:pl-3 pr-1 sm:pr-1.5 py-1 sm:py-1.5 rounded-full border border-slate-200/60 shadow-sm shadow-slate-200/20 transition-all hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-brand-blue/10 max-w-[160px] sm:max-w-[240px]",
-                  isProfileOpen && "border-brand-blue/30 ring-4 ring-brand-blue/5 bg-slate-50"
-                )}
+                className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-1.5 rounded-xl transition-colors focus:outline-none"
               >
-                <div className="text-right hidden sm:flex flex-col items-end justify-center min-w-0 mr-1 max-w-[120px] xl:max-w-[160px]">
-                  <p className="text-[13px] font-bold text-slate-900 leading-tight truncate w-full">{user?.displayName || 'Usuario'}</p>
-                  <p className="text-[9px] text-brand-blue font-black uppercase tracking-widest whitespace-nowrap truncate w-full mt-0.5">
-                    {user?.role === 'admin' ? 'Admin General' : user?.role === 'supervisor' ? 'Supervisor' : 'Técnico'}
-                  </p>
+                <div className="text-right hidden sm:block">
+                  <span className="block text-xs font-bold text-slate-700">
+                    {obtenerNombreCorto(user?.displayName)}
+                  </span>
+                  <span className="block text-[9px] text-brand-blue font-bold uppercase tracking-wider mt-0.5">
+                    {permisos.rolVisual}
+                  </span>
                 </div>
-                <div className="w-8 h-8 lg:w-10 lg:h-10 bg-gradient-to-br from-brand-blue to-blue-600 rounded-full flex items-center justify-center text-white shadow-inner shrink-0 overflow-hidden border-2 border-white ring-1 ring-slate-200">
+                <div className="w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 overflow-hidden shrink-0 bg-slate-100">
                   {user?.photoURL ? (
                     <img src={user.photoURL} alt={user?.displayName || 'User'} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
-                    <span className="font-black text-xs lg:text-sm leading-none flex items-center justify-center text-white">{(user?.displayName || 'U').charAt(0).toUpperCase()}</span>
+                    <span className="font-black text-xs leading-none">{(user?.displayName || 'U').charAt(0).toUpperCase()}</span>
                   )}
                 </div>
               </button>
@@ -340,6 +327,7 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
               )}
             </div>
           </div>
+          </div>
         </header>
 
         {/* Scrollable Content */}
@@ -356,20 +344,13 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
               {/* Bottom Brand Corporate Bar */}
               <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-display font-black text-brand-blue tracking-tighter text-sm uppercase">CANTV</span>
-                    <div className="w-1.5 h-1.5 rounded-full bg-slate-350" />
-                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">
-                      Compañía Anónima Nacional Teléfonos de Venezuela
-                    </span>
-                  </div>
                   <p className="text-[10px] text-slate-500 font-medium font-sans">
-                    Gerencia General de Tecnología y Operaciones · © {new Date().getFullYear()} Dirección de Soporte de Transmisión y Datos. Todos los derechos reservados.
+                    Gerencia General de Tecnología y Operaciones · © {new Date().getFullYear()} Departamento de Datos y Transmisión. Todos los derechos reservados.
                   </p>
                 </div>
                 
                 <div className="flex items-center gap-2 sm:gap-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest bg-slate-100/80 px-3 py-2 rounded-2xl border border-slate-200 w-fit">
-                  <span className="text-brand-blue whitespace-nowrap">SISTEMA CONTROL DE LABORES</span>
+                  <span className="text-brand-blue whitespace-nowrap">SGAV-DyT (Gestión de Actividades, Viáticos y Sobretiempos)</span>
                   <div className="w-1 h-1 bg-slate-300 rounded-full hidden sm:block shrink-0" />
                   <span className="bg-brand-blue text-white font-mono px-2 py-0.5 rounded-md text-[8px] sm:text-[9px] shrink-0 whitespace-nowrap">v2.6.0 PROD</span>
                 </div>
@@ -385,11 +366,23 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
           <div className="absolute inset-0 bg-[#0b1120]/80 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsMobileMenuOpen(false)}></div>
           <aside className="absolute inset-y-0 left-0 w-64 bg-[#0b1120] border-r border-slate-800/60 shadow-[4px_0_24px_rgba(0,0,0,0.2)] flex flex-col animate-in slide-in-from-left duration-300 z-[110]">
             <div className="p-5 border-b border-slate-800/60 flex items-center justify-between h-20 bg-gradient-to-b from-white/[0.02] to-transparent">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-brand-blue to-blue-600 rounded-xl flex items-center justify-center text-white font-display font-black shadow-lg shadow-brand-blue/20 border border-blue-400/20 text-xl">C</div>
-                <div className="flex flex-col justify-center">
-                  <h1 className="font-display font-black text-white leading-none text-xl tracking-tighter">CANTV</h1>
-                  <p className="text-[9px] text-brand-blue font-black uppercase tracking-[0.2em] mt-1">Soporte Datos</p>
+              <div className="flex items-center gap-4">
+                <svg 
+                  className="w-9 h-9 shrink-0" 
+                  viewBox="0 0 32 32" 
+                  fill="none" 
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <circle cx="6" cy="26" r="2.5" fill="#FFFFFF" />
+                  <path d="M6 18A8 8 0 0 1 14 26" stroke="#F2C94C" strokeWidth="2.5" strokeLinecap="round" />
+                  <path d="M6 12A14 14 0 0 1 20 26" stroke="#2F80ED" strokeWidth="2.5" strokeLinecap="round" />
+                  <path d="M6 6A20 20 0 0 1 26 26" stroke="#EB5757" strokeWidth="2.5" strokeLinecap="round" />
+                </svg>
+                <div className="flex flex-col justify-center min-w-0">
+                  <span className="text-base font-extrabold text-white tracking-[0.15em] leading-none">CANTV</span>
+                  <span className="text-[9px] text-slate-400 font-bold tracking-wider uppercase leading-tight mt-1.5 whitespace-normal">
+                    Departamento de Datos y Transmisión
+                  </span>
                 </div>
               </div>
               <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 text-slate-400 hover:text-white bg-white/[0.03] rounded-full hover:bg-white/10 transition-colors">

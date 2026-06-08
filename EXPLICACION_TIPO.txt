@@ -1,0 +1,63 @@
+================================================================================
+EXPLICACIÓN DETALLADA DEL CAMPO "TIPO" EN LAS ACTIVIDADES DE CANTV
+================================================================================
+
+El campo "Tipo" (o 'type' internamente en el código) es un parámetro de
+clasificación fundamental para cada una de las labores o actividades técnicas 
+que los técnicos y supervisores registran en el sistema.
+
+A continuación, se detalla qué dato registra, cuál es su propósito y cómo
+interviene en los reportes del sistema.
+
+--------------------------------------------------------------------------------
+1. ¿QUÉ DATO REGISTRA EL CAMPO "TIPO"?
+--------------------------------------------------------------------------------
+Registra la CATEGORÍA TÉCNICA O NATURALEZA de la labor que se está realizando.
+En el sistema, cuando se generan datos de demostración o se analizan las 
+actividades, este campo suele registrar uno de los siguientes valores:
+
+  * "mantenimiento preventivo": Labores de rutina para prevenir fallas o
+    deterioros en la infraestructura física, central telefónica, fibra o
+    equipos de transmisión de CANTV.
+  * "mantenimiento correctivo": Reparación de fallas activas reportadas por
+    los clientes, caídas de tarjetas, cortes de fibra óptica, fallas de energía, etc.
+  * "instalación": Colocación y puesta en marcha de nuevos equipos, tendido 
+    de cableado nuevo, activación de abonados o nuevos enlaces.
+  * "configuración": Ajustes lógicos de software, ruteo IP, configuración 
+    de routers, switches, DSLAMs o portadoras.
+  * "inspección": Visitas técnicas de campo para evaluar la viabilidad de un proyecto
+    o revisar el estado de un nodo o canalización.
+  * "reunión": Actividades de coordinación administrativa, de seguridad laboral
+    o planificación del dpto.
+  * "formación": Capacitaciones técnicas, cursos o adiestramiento recibido.
+  * "otro": Cualquier tarea que no se enmarque directamente en las anteriores.
+
+--------------------------------------------------------------------------------
+2. ¿PARA QUÉ SE UTILIZA ESTE DATO?
+--------------------------------------------------------------------------------
+El campo "Tipo" sirve principalmente para tres propósitos administrativos:
+
+  A. Auditoría Visual Rápida:
+     En los reportes y resúmenes semanales/mensuales, permite a los supervisores 
+     identificar rápidamente si la mayor parte del tiempo del personal se está 
+     yendo en atender emergencias (soporte correctivo) o en labores programadas 
+     (preventivo/instalación).
+
+  B. Exportación Dinámica de Datos (Excel):
+     Al exportar las actividades registradas a hojas de cálculo XLSX para la 
+     nómina institucional, se incluye la columna "Tipo" para mantener la 
+     trazabilidad completa y estructurada ante las gerencias de CANTV.
+
+  C. Clasificación y Fallbacks de Especialidad:
+     En caso de que el sistema no logre asignar un área o departamento directo
+     a un técnico, utiliza el "Tipo" de la actividad real ejecutada como un 
+     parámetro alternativo para asignar la labor a los sub-departamentos clave 
+     (como TRANSMISIÓN, DATOS o PROVISIÓN).
+
+================================================================================
+CONSEJO PRÁCTICO:
+Si estás visualizando las tarjetas del Reporte de Sobretiempos y observas el campo 
+"TIPO", este indica de manera breve si el sobretiempo acumulado en esa jornada 
+ocurrió debido a un "mantenimiento preventivo", "mantenimiento correctivo", u 
+otra labor específica que justificó la extensión de las horas de trabajo.
+================================================================================

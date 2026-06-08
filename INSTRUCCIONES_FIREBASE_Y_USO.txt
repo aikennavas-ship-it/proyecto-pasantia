@@ -1,0 +1,75 @@
+================================================================================
+GUÍA DE ADMINISTRACIÓN DE FIREBASE Y MANUAL DE USO DE LA APLICACIÓN
+================================================================================
+
+PARTE 1: CÓMO ADMINISTRAR USUARIOS DIRECTAMENTE EN FIREBASE
+(Crear, Editar, Eliminar perfiles y limpiar cuentas innecesarias)
+
+Dado que mencionaste tener cuentas "de más" que deseas limpiar, la forma más rápida y segura de eliminarlas de raíz es usando la Consola de Firebase.
+
+1. Acceder a la Consola de Firebase:
+   - Ve a tu navegador e ingresa a: https://console.firebase.google.com/
+   - Inicia sesión con la cuenta de Google vinculada al proyecto (aikennavas@gmail.com).
+   - Haz clic en tu proyecto de Firebase.
+
+2. Ir a la sección de Autenticación:
+   - En el menú lateral izquierdo, busca el ícono de dos personas o la sección "Compilación" (Build).
+   - Haz clic en "Authentication" (Autenticación).
+   - Verás la pestaña "Users" (Usuarios), donde aparece la lista de todos los correos registrados.
+
+3. Eliminar Usuarios (Limpieza):
+   - Localiza la fila del usuario o correo que ya no necesitas.
+   - A la derecha de esa fila, haz clic en los tres puntos verticales (Menú de opciones).
+   - Selecciona "Borrar cuenta" (Delete account).
+   - Confirma la acción. Esto elimina sus credenciales de acceso permanentemente.
+   
+4. Crear o Modificar Usuarios:
+   - Para Crear: En esa misma pestaña "Users", arriba tienes un botón "Agregar usuario" (Add user) donde colocas correo y contraseña. (Ojo: Es mejor crear los técnicos desde tu propia aplicación para que se guarde su carnet, nombre, etc. en la base de datos).
+   - Para Modificar Contraseña: En los tres puntos junto al usuario, puedes enviar un link de restablecimiento de contraseña.
+
+*Nota sobre la Base de Datos (Firestore):*
+Al borrar un usuario en "Authentication", él ya no podrá entrar. Sin embargo, si quieres borrar sus datos del sistema (nombres, historial), debes ir a la sección "Firestore Database" en el menú izquierdo, buscar la colección "technicians" o "users", buscar su documento y borrarlo.
+
+
+
+================================================================================
+PARTE 2: CÓMO UTILIZAR LA APP AL 100% (MODO ADMIN / SUPERVISOR)
+================================================================================
+
+Tu aplicación CANTV es un Sistema de Gestión de Datos, Transmisión y Energía muy completo. Para sacarle todo el provecho, sigue este flujo de trabajo:
+
+1. AUTENTICACIÓN Y ROLES:
+   Inicia sesión con tu correo de administrador o supervisor. Los administradores tienen acceso total, mientras que técnicos solo tienen vista limitada (si aplica).
+
+2. MÓDULO "PANEL PRINCIPAL" (DASHBOARD):
+   - Uso: Es tu centro de mando. Revisa este panel a final de mes o semana.
+   - Qué puedes hacer: 
+     * Ver el total de actividades, horas trabajadas y monto gastado en viáticos.
+     * Analizar los Gráficos de tendencias semanales y la distribución por departamento (Datos, Transmisión, Energía).
+     * Monitorear el "Top 5 Personal" para ver qué técnicos están asumiendo más labores.
+
+3. MÓDULO "ACTIVIDADES" (Registro Diario):
+   - Uso: El corazón operativo de la app. Aquí se registra el día a día.
+   - Qué puedes hacer:
+     * "Nueva Actividad": Registra fallas, mantenimientos o instalaciones. Coloca hora de inicio y fin; el sistema calcula automáticamente el Tiempo Real y el Sobretiempo.
+     * Viáticos y Traslados: Si se usó vehículo, se marca y se justifica el consumo.
+     * Participantes: Selecciona a los técnicos involucrados. Si alguno acumuló demasiadas horas sin descanso (Alertas LOTT), el sistema lo notificará visualmente.
+
+4. MÓDULO "PERSONAL DE GUARDIA" (Technicians):
+   - Uso: Gestión de tus Recursos Humanos.
+   - Qué puedes hacer:
+     * Registrar nuevo personal con su Cédula, Carnet (P00), Departamento y Especialidad. (Esto crea automáticamente su usuario en la base de datos).
+     * Si necesitas editar la guardia de alguien, búscalo en la lista y actualiza sus datos.
+     * Filtrar rápidamente por especialidad si necesitas buscar a un experto en Microondas, Fibra Óptica, etc.
+
+5. MÓDULO "REPORTES" (Exportación y Nómina):
+   - Uso: Al final del mes, para enviar la relación operativa y cálculos de RRHH.
+   - Qué puedes hacer:
+     * Filtra por el "Mes y Año" objetivo usando el selector superior.
+     * "Planificación Mensual (Excel)": Descarga un Excel purificado con las actividades del mes, ordenado estructuralmente.
+     * "Sobretiempo de Ley (Excel)": Genera un formato específico diseñado para el cálculo de nómina y pago de horas extras de los técnicos involucrados.
+     * "Reporte Consolidado (PDF)": Exporta la data mensual en un documento formal e institucional listo para presentar a la directiva o imprimir.
+
+CONSEJOS FINALES DE PRODUCTIVIDAD:
+- Al registrar actividades, sé preciso con las horas. El cálculo de "Horas Extra/Sobretiempo" es automático, por lo que su exactitud impacta directamente el cuadro de RRHH en el módulo de Reportes.
+- Mantén el "Personal de Guardia" depurado (usando los pasos de la Parte 1 si es necesario). Si un técnico renuncia o cambia de departamento, actualízalo en el sistema para que no arrastre data basura en meses posteriores.

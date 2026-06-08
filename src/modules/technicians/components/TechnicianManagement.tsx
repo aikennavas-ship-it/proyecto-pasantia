@@ -10,10 +10,162 @@
  * la manipulación de la colección 'technicians'.
  */
 import React from 'react';
-import { UserPlus, Search, Shield, BadgeCheck, X, Briefcase, Trash2, Edit2, Phone } from 'lucide-react';
+import { UserPlus, Search, Shield, BadgeCheck, X, Briefcase, Trash2, Edit2, Phone, Calendar, MapPin } from 'lucide-react';
 import { Technician } from '../../../types';
 import { cn } from '../../../lib/utils';
 import TechnicianForm from './TechnicianForm';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
+
+const exportarPersonalExcel = async (listaPersonal: Technician[]) => {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('INVENTARIO_PERSONAL_2026');
+
+  // 1. Estructura de columnas del reporte de personal (14 columnas totales)
+  worksheet.columns = [
+    { header: 'P00 (CARNET)', key: 'carnet' },
+    { header: 'NOMBRES Y APELLIDOS', key: 'nombreCompleto' },
+    { header: 'CÉDULA DE IDENTIDAD', key: 'cedula' },
+    { header: 'FECHA DE NACIMIENTO', key: 'fechaNacimiento' },
+    { header: 'DIRECCIÓN DE HABITACIÓN', key: 'direccion' },
+    { header: 'FECHA DE INGRESO', key: 'fechaIngreso' },
+    { header: 'CARGO / ESPECIALIDAD', key: 'especialidad' },
+    { header: 'DEPARTAMENTO', key: 'departamento' },
+    { header: 'TELÉFONO', key: 'telefono' },
+    { header: 'ROL SISTEMA', key: 'rol' },
+    { header: 'ESTADO', key: 'estado' },
+    { header: 'TALLA BOTAS', key: 'tallaBotas' },
+    { header: 'TALLA CAMISA', key: 'tallaCamisa' },
+    { header: 'TALLA PANTALÓN', key: 'tallaPantalon' }
+  ];
+
+  // Estilo estético del encabezado (CANTV Blue #004a99)
+  const headerRow = worksheet.getRow(1);
+  headerRow.height = 28; // Alto de cabecera más holgado
+  headerRow.eachCell((cell) => {
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: '004A99' }
+    };
+    cell.font = {
+      name: 'Calibri',
+      size: 11,
+      bold: true,
+      color: { argb: 'FFFFFFFF' }
+    };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+    };
+  });
+
+  // Helper para formatear fechas a formato estándar DD/MM/YYYY
+  const formatearFecha = (fechaStr?: string) => {
+    if (!fechaStr) return 'Sin registrar';
+    const parts = fechaStr.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return fechaStr;
+  };
+
+  // 2. Población de filas
+  listaPersonal.forEach((usuario, index) => {
+    const row = worksheet.addRow({
+      carnet: usuario.employeeId,
+      nombreCompleto: usuario.name.trim(),
+      cedula: usuario.idCard,
+      fechaNacimiento: formatearFecha(usuario.fechaNacimiento),
+      direccion: usuario.direccion || 'Sin registrar',
+      fechaIngreso: formatearFecha(usuario.fechaIngreso),
+      especialidad: usuario.specialty,
+      departamento: usuario.department,
+      telefono: usuario.phoneNumber || 'Sin registrar',
+      rol: (usuario.role || 'tecnico').toUpperCase(),
+      estado: usuario.status.toUpperCase(),
+      tallaBotas: usuario.tallaBotas || 'N/R',
+      tallaCamisa: usuario.tallaCamisa || 'N/R',
+      tallaPantalon: usuario.tallaPantalon || 'N/R'
+    });
+
+    row.height = 22; // Alto de fila espacioso
+
+    // Determinar color de fondo para zebra-striping (Alternar filas grises suaves)
+    const esPar = index % 2 === 0;
+    const colorFondoFila = esPar ? 'F8FAFC' : 'FFFFFFFF'; // Gris muy suave en filas pares
+
+    // Alineación central de datos de control, izquierda para nombres y dirección
+    row.eachCell((cell, colNumber) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: colorFondoFila }
+      };
+      cell.font = { name: 'Calibri', size: 10 };
+      cell.alignment = {
+        vertical: 'middle',
+        horizontal: (colNumber === 2 || colNumber === 5) ? 'left' : 'center'
+      };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+      };
+    });
+  });
+
+  // 3. ALGORITMO DE AUTO-AJUSTE DINÁMICO DE ANCHO DE COLUMNAS (Previene nombres cortados)
+  worksheet.columns.forEach((column) => {
+    let maxLen = 0;
+    column.eachCell({ includeEmpty: true }, (cell) => {
+      const valText = cell.value ? cell.value.toString() : '';
+      if (valText.length > maxLen) {
+        maxLen = valText.length;
+      }
+    });
+    // Añadimos un padding de seguridad de 4 caracteres
+    column.width = Math.max(maxLen + 4, 12);
+  });
+
+  // Descarga del documento
+  const buffer = await workbook.xlsx.writeBuffer();
+  saveAs(new Blob([buffer]), `Nomina_Personal_CANTV_2026.xlsx`);
+};
+
+const formatSentenceCaseKey = (text: string) => {
+  if (!text) return "";
+  const clean = text.trim();
+  // Capitalize first, lowercase the rest
+  return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
+};
+
+const getDeptBadgeClass = (dept: string) => {
+  const d = (dept || '').toUpperCase();
+  if (d.includes('TRANSMISIÓN') || d.includes('TRANSMISION')) {
+    return 'bg-blue-50 text-blue-600 font-semibold rounded-lg text-xs py-1 px-2.5 whitespace-nowrap border border-blue-100';
+  }
+  if (d.includes('DATOS')) {
+    return 'bg-emerald-50 text-emerald-600 font-semibold rounded-lg text-xs py-1 px-2.5 whitespace-nowrap border border-emerald-100';
+  }
+  if (d.includes('ENERGÍA') || d.includes('ENERGIA')) {
+    return 'bg-amber-50 text-amber-600 font-semibold rounded-lg text-xs py-1 px-2.5 whitespace-nowrap border border-amber-100';
+  }
+  return 'bg-slate-100 text-slate-600 font-medium rounded-lg text-xs py-1 px-2.5 whitespace-nowrap border border-slate-250';
+};
+
+const formatearFechaTabla = (fechaStr?: string): string => {
+  if (!fechaStr) return 'Sin registrar';
+  const parts = fechaStr.split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return fechaStr;
+};
 
 interface TechnicianManagementProps {
   technicians: Technician[];
@@ -21,9 +173,19 @@ interface TechnicianManagementProps {
   onEditTechnician?: (tech: Technician) => void;
   onDeleteTechnician?: (id: string, name: string) => void;
   isLoading: boolean;
+  currentUserId?: string;
+  currentUserEmail?: string;
 }
 
-export default function TechnicianManagement({ technicians, onAddTechnician, onEditTechnician, onDeleteTechnician, isLoading }: TechnicianManagementProps) {
+export default function TechnicianManagement({ 
+  technicians, 
+  onAddTechnician, 
+  onEditTechnician, 
+  onDeleteTechnician, 
+  isLoading,
+  currentUserId,
+  currentUserEmail
+}: TechnicianManagementProps) {
   const [isFormOpen, setIsFormOpen] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState('');
 
@@ -34,7 +196,7 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
     // 1. C.I. (Cedula): If query starts with "v-" (or "v" followed by numbers/dash)
     const isCISearch = query.startsWith('v-') || (query.startsWith('v') && (query === 'v' || /\d/.test(query)));
 
-    // 2. POO: If query contains only numbers directly
+    // 2. P00: If query contains only numbers directly
     const isNumeric = /^\d+$/.test(query);
 
     return technicians.filter(t => {
@@ -50,7 +212,7 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
       }
 
       if (isNumeric) {
-        // Search by POO (employeeId) directly
+        // Search by P00 (employeeId) directly
         const cleanQuery = query.replace(/[^0-9]/g, '');
         const cleanEmployeeId = employeeId.replace(/[^0-9]/g, '');
         return cleanEmployeeId.includes(cleanQuery);
@@ -63,31 +225,47 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 bg-white p-6 rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02),0_15px_35px_rgba(0,0,0,0.06)] border border-slate-200">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full xl:w-auto">
-          <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-brand-blue to-blue-600 rounded-3xl flex items-center justify-center text-white shadow-lg shadow-brand-blue/15 shrink-0">
-            <Shield size={26} className="sm:size-7" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-lg sm:text-xl font-display font-black text-slate-900 tracking-tight uppercase truncate">Personal y Accesos</h2>
-            <div className="flex flex-wrap items-center gap-2 mt-0.5">
-              <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Control de Usuarios y ROLES</p>
-              <div className="hidden sm:block w-1.5 h-1.5 rounded-full bg-slate-300" />
-              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-1">
-                Central Maracay 4357
-              </p>
-            </div>
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 w-full">
+        
+        {/* LADO IZQUIERDO: TÍTULO */}
+        <div className="flex items-center gap-3">
+          <span className="p-3 bg-blue-600 text-white rounded-2xl shadow-md">
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+          </span>
+          <div>
+            <h2 className="text-lg font-bold text-slate-800">PERSONAL Y ACCESOS</h2>
+            <p className="text-xs text-slate-400">CONTROL DE USUARIOS Y ROLES</p>
           </div>
         </div>
-        {onAddTechnician && (
+
+        {/* LADO DERECHO: ACCIONES RESPONSIVAS (Fin del comportamiento tirano) */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto shrink-0">
+          
+          {/* BOTÓN SECUNDARIO: EXPORTAR NÓMINA (Con icono de Excel) */}
           <button 
-            onClick={() => setIsFormOpen(true)}
-            className="w-full xl:w-auto px-6 py-2.5 bg-brand-blue text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-brand-blue/20 hover:bg-brand-blue-dark active:scale-[0.98] transition-all flex items-center justify-center gap-2 shrink-0"
+            onClick={() => exportarPersonalExcel(technicians)}
+            className="w-full sm:w-auto px-6 py-2.5 bg-white hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 border border-slate-200 text-slate-600 text-[11px] font-black uppercase tracking-widest rounded-2xl shadow-sm transition-all flex items-center justify-center gap-2 active:scale-[0.98] shrink-0"
           >
-            <UserPlus size={18} />
-            <span>Registrar Nuevo</span>
+            <svg className="w-4 h-4 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>Exportar Nómina</span>
           </button>
-        )}
+
+          {/* BOTÓN PRINCIPAL: REGISTRAR NUEVO */}
+          {onAddTechnician && (
+            <button 
+              onClick={() => setIsFormOpen(true)}
+              className="w-full sm:w-auto px-6 py-2.5 bg-brand-blue text-white rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-lg shadow-brand-blue/20 hover:shadow-xl hover:bg-brand-blue-dark active:scale-[0.98] transition-all flex items-center justify-center gap-2 shrink-0"
+            >
+              <span className="text-sm leading-none shrink-0">+</span> 
+              <span>Registrar Nuevo</span>
+            </button>
+          )}
+
+        </div>
       </div>
 
       <div className="glass-card overflow-hidden">
@@ -110,105 +288,152 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
         </div>
 
         {/* Desktop Table View */}
-        <div className="hidden md:block overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto w-full">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-100/90 text-[11px] font-extrabold text-slate-900 uppercase tracking-widest border-b-2 border-slate-300">
-                <th className="px-6 py-4">Usuario / Técnico</th>
-                <th className="px-6 py-4">Rol Sistema</th>
-                <th className="px-6 py-4">P00</th>
-                <th className="px-6 py-4 whitespace-nowrap">C.I</th>
-                <th className="px-6 py-4">Estado</th>
-                <th className="px-6 py-4 text-right">Acciones</th>
+                <th className="px-6 py-4 whitespace-nowrap text-left">Nombres y Apellidos</th>
+                <th className="px-6 py-4 whitespace-nowrap text-center">Cargo</th>
+                <th className="px-6 py-4 whitespace-nowrap text-center">Departamento</th>
+                <th className="px-6 py-4 whitespace-nowrap text-center">Rol</th>
+                <th className="px-6 py-4 whitespace-nowrap text-center">P00 (Carnet)</th>
+                <th className="px-6 py-4 whitespace-nowrap text-center">Cédula</th>
+                <th className="px-6 py-4 whitespace-nowrap text-center">F. Nacimiento</th>
+                <th className="px-6 py-4 whitespace-nowrap text-center">Dirección</th>
+                <th className="px-6 py-4 whitespace-nowrap text-center">F. Ingreso</th>
+                <th className="px-6 py-4 whitespace-nowrap text-center">Dotación</th>
+                <th className="px-6 py-4 whitespace-nowrap text-center">Estado</th>
+                <th className="px-6 py-4 whitespace-nowrap text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 [1,2,3].map(i => (
                   <tr key={i} className="animate-pulse">
-                    <td colSpan={6} className="px-6 py-4 h-16 bg-slate-50/30"></td>
+                    <td colSpan={12} className="px-6 py-4 h-16 bg-slate-50/30"></td>
                   </tr>
                 ))
               ) : filteredTechs.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400 italic">
+                   <td colSpan={12} className="px-6 py-12 text-center text-slate-400 italic">
                     No se encontraron técnicos registrados.
                   </td>
                 </tr>
               ) : (
-                filteredTechs.map(tech => (
-                  <tr key={tech.id} className="hover:bg-slate-50/50 transition-colors group">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-brand-blue/10 flex items-center justify-center text-brand-blue">
-                          <BadgeCheck size={20} />
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-900 leading-none">{tech.name}</p>
-                          <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-slate-500 mt-1.5 font-medium items-center">
-                            <span className="font-mono">{tech.email}</span>
-                            <span>•</span>
-                            <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-bold">{tech.specialty}</span>
-                            {tech.department && (
-                              <>
-                                <span>•</span>
-                                <span className="bg-blue-50 text-brand-blue border border-blue-100 px-1.5 py-0.5 rounded font-black uppercase tracking-wider">{tech.department}</span>
-                              </>
-                            )}
+                filteredTechs.map(tech => {
+                  const esFilaAdmin = tech.role === 'admin';
+                  const esOtroAdmin = esFilaAdmin && tech.uid !== currentUserId && tech.email?.toLowerCase().trim() !== currentUserEmail?.toLowerCase().trim();
+                  return (
+                    <tr key={tech.id} className="hover:bg-slate-50/50 transition-colors group">
+                      <td className="px-6 py-4 whitespace-nowrap text-left">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-brand-blue/10 flex items-center justify-center text-brand-blue shrink-0">
+                            <BadgeCheck size={20} />
+                          </div>
+                          <div>
+                            <p className="font-semibold text-slate-800 leading-none">{tech.name}</p>
+                            <p className="text-xs text-slate-400 font-mono mt-1">{tech.email}</p>
                           </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={cn(
-                        "text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border",
-                        tech.role === 'admin' ? "bg-purple-50 text-purple-600 border-purple-100" : 
-                        tech.role === 'supervisor' ? "bg-brand-blue/5 text-brand-blue border-brand-blue/10" : 
-                        "bg-slate-50 text-slate-500 border-slate-100"
-                      )}>
-                        {tech.role === 'admin' ? 'Administrador' : tech.role === 'supervisor' ? 'Supervisor' : 'Técnico'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">
-                        {tech.employeeId || 'S/N'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded whitespace-nowrap inline-block">
-                        {tech.idCard || 'S/N'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className={cn(
-                        "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full",
-                        tech.status === 'activo' ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"
-                      )}>
-                        {tech.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {onEditTechnician && (
-                          <button 
-                            onClick={() => onEditTechnician(tech)}
-                            className="p-1.5 text-slate-500 hover:text-brand-blue transition-all rounded-lg bg-white border border-slate-200 shadow-sm hover:border-brand-blue/30 hover:shadow"
-                          >
-                            <Edit2 size={16} />
-                          </button>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <span className="bg-slate-50 text-slate-600 text-xs py-1 px-2.5 rounded-lg border border-slate-200/50 inline-block font-sans">
+                          {formatSentenceCaseKey(tech.specialty || 'Soporte técnico')}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <span className={getDeptBadgeClass(tech.department || 'General')}>
+                          {tech.department || 'General'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <span className={cn(
+                          "text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border",
+                          tech.role === 'admin' ? "bg-purple-50 text-purple-600 border-purple-100" : 
+                          tech.role === 'supervisor' ? "bg-brand-blue/5 text-brand-blue border-brand-blue/10" : 
+                          "bg-slate-50 text-slate-500 border-slate-100"
+                        )}>
+                          {tech.role === 'admin' ? 'Administrador' : tech.role === 'supervisor' ? 'Supervisor' : 'Técnico'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">
+                          {tech.employeeId || 'S/N'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">
+                          {tech.idCard || 'S/N'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-xs text-slate-600 font-medium">
+                        {formatearFechaTabla(tech.fechaNacimiento)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-xs text-slate-500 font-medium max-w-[150px] truncate" title={tech.direccion || 'Sin registrar'}>
+                        {tech.direccion || 'Sin registrar'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-xs text-slate-600 font-medium">
+                        {formatearFechaTabla(tech.fechaIngreso)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-xs">
+                        {tech.tallaBotas || tech.tallaCamisa || tech.tallaPantalon ? (
+                          <div className="inline-flex items-center justify-center gap-1.5">
+                            <span className="font-mono text-[10px] font-bold text-slate-600 bg-slate-100/80 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">
+                              <span className="text-slate-400 mr-0.5">B:</span>{tech.tallaBotas || '-'}
+                            </span>
+                            <span className="font-mono text-[10px] font-bold text-slate-600 bg-slate-100/80 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">
+                              <span className="text-slate-400 mr-0.5">C:</span>{tech.tallaCamisa || '-'}
+                            </span>
+                            <span className="font-mono text-[10px] font-bold text-slate-600 bg-slate-100/80 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">
+                              <span className="text-slate-400 mr-0.5">P:</span>{tech.tallaPantalon || '-'}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Sin registrar</span>
                         )}
-                        {onDeleteTechnician && (
-                          <button 
-                            onClick={() => onDeleteTechnician(tech.id, tech.name)}
-                            className="p-1.5 text-slate-500 hover:text-red-500 transition-all rounded-lg bg-white border border-slate-200 shadow-sm hover:border-red-500/30 hover:shadow hover:bg-red-50"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <span className={cn(
+                          "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full",
+                          tech.status === 'activo' ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"
+                        )}>
+                          {tech.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {esOtroAdmin ? (
+                            <span 
+                              className="px-2.5 py-1.5 bg-slate-100 text-slate-500 text-[10px] font-bold uppercase rounded-lg border border-slate-200 flex items-center justify-center gap-1 cursor-not-allowed select-none shadow-sm"
+                              title="Este perfil pertenece a otro Administrador General y está protegido contra modificaciones externas."
+                            >
+                              🔒 Protegido
+                            </span>
+                          ) : (
+                            <>
+                              {onEditTechnician && (
+                                <button 
+                                  onClick={() => onEditTechnician(tech)}
+                                  className="p-1.5 text-slate-500 hover:text-brand-blue transition-all rounded-lg bg-white border border-slate-200 shadow-sm hover:border-brand-blue/30 hover:shadow"
+                                >
+                                  <Edit2 size={16} />
+                                </button>
+                              )}
+                              {onDeleteTechnician && (
+                                <button 
+                                  onClick={() => onDeleteTechnician(tech.id, tech.name)}
+                                  className="p-1.5 text-slate-500 hover:text-red-500 transition-all rounded-lg bg-white border border-slate-200 shadow-sm hover:border-red-500/30 hover:shadow hover:bg-red-50"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -223,66 +448,89 @@ export default function TechnicianManagement({ technicians, onAddTechnician, onE
           ) : filteredTechs.length === 0 ? (
             <p className="text-center text-slate-400 py-8 italic text-sm">No hay técnicos registrados.</p>
           ) : (
-            filteredTechs.map(tech => (
-              <div key={tech.id} className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4 flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-brand-blue/10 flex items-center justify-center text-brand-blue">
-                      <BadgeCheck size={20} />
-                    </div>
-                    <div>
-                      <p className="font-black text-slate-900 leading-none">{tech.name}</p>
-                      <p className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-wider">
-                        P00: {tech.employeeId || 'S/N'} <span className="opacity-50">|</span> C.I: {tech.idCard || 'S/N'}
-                      </p>
-                    </div>
-                  </div>
-                  <span className={cn(
-                    "text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full",
-                    (tech.status || '').toLowerCase() === 'activo' ? "bg-emerald-50 text-emerald-600" :
-                    (tech.status || '').toLowerCase() === 'inactivo' || (tech.status || '').toLowerCase() === 'baja' ? "bg-red-50 text-red-600" :
-                    "bg-amber-50 text-amber-600"
-                  )}>
-                    {tech.status}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                  <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center gap-2">
-                      <Briefcase size={12} className="text-slate-400" />
-                      <span className="text-[11px] font-bold text-slate-600">
-                        {tech.specialty}
-                        {tech.department && <span className="text-brand-blue font-extrabold uppercase"> [{tech.department}]</span>}
-                      </span>
-                    </div>
-                    {tech.phoneNumber && (
-                      <div className="flex items-center gap-2">
-                        <Phone size={12} className="text-slate-400" />
-                        <span className="text-[11px] font-bold text-slate-600">{tech.phoneNumber}</span>
+            filteredTechs.map(tech => {
+              const esFilaAdmin = tech.role === 'admin';
+              const esOtroAdmin = esFilaAdmin && tech.uid !== currentUserId && tech.email?.toLowerCase().trim() !== currentUserEmail?.toLowerCase().trim();
+              return (
+                <div key={tech.id} className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4 flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-brand-blue/10 flex items-center justify-center text-brand-blue">
+                        <BadgeCheck size={20} />
                       </div>
-                    )}
+                      <div>
+                        <p className="font-black text-slate-900 leading-none">{tech.name}</p>
+                        <p className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-wider">
+                          P00: {tech.employeeId || 'S/N'} <span className="opacity-50">|</span> C.I: {tech.idCard || 'S/N'}
+                        </p>
+                        {/* Mobile Dotación */}
+                        {(tech.tallaBotas || tech.tallaCamisa || tech.tallaPantalon) && (
+                          <div className="mt-1.5 inline-flex flex-wrap items-center gap-1.5">
+                            <span className="font-mono text-[9px] font-bold text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded shadow-sm relative z-10">
+                              <span className="text-slate-400 mr-0.5">B:</span>{tech.tallaBotas || '-'}
+                            </span>
+                            <span className="font-mono text-[9px] font-bold text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded shadow-sm relative z-10">
+                              <span className="text-slate-400 mr-0.5">C:</span>{tech.tallaCamisa || '-'}
+                            </span>
+                            <span className="font-mono text-[9px] font-bold text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded shadow-sm relative z-10">
+                              <span className="text-slate-400 mr-0.5">P:</span>{tech.tallaPantalon || '-'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <span className={cn(
+                      "text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full",
+                      (tech.status || '').toLowerCase() === 'activo' ? "bg-emerald-50 text-emerald-600" :
+                      (tech.status || '').toLowerCase() === 'inactivo' || (tech.status || '').toLowerCase() === 'baja' ? "bg-red-50 text-red-600" :
+                      "bg-amber-50 text-amber-600"
+                    )}>
+                      {tech.status}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-2">
-                     {onEditTechnician && (
-                       <button 
-                        onClick={() => onEditTechnician(tech)}
-                        className="p-2 text-brand-blue bg-brand-blue/5 rounded-lg"
-                       >
-                        <Edit2 size={14} />
-                       </button>
-                     )}
-                    {onDeleteTechnician && (
-                      <button 
-                         onClick={() => onDeleteTechnician(tech.id, tech.name)}
-                         className="p-2 text-red-500 bg-red-50 rounded-lg"
-                      >
-                         <Trash2 size={14} />
-                      </button>
-                    )}
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-2">
+                        <Briefcase size={12} className="text-slate-400" />
+                        <span className="text-[11px] font-bold text-slate-600">
+                          {tech.specialty}
+                          {tech.department && <span className="text-brand-blue font-extrabold uppercase"> [{tech.department}]</span>}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {esOtroAdmin ? (
+                        <span 
+                          className="px-2.5 py-1 bg-slate-100 text-slate-500 text-[9px] font-bold uppercase rounded-md border border-slate-200 flex items-center gap-1 cursor-not-allowed select-none shadow-sm"
+                          title="Este perfil pertenece a otro Administrador General y está protegido contra modificaciones externas."
+                        >
+                          🔒 Protegido
+                        </span>
+                      ) : (
+                        <>
+                          {onEditTechnician && (
+                            <button 
+                              onClick={() => onEditTechnician(tech)}
+                              className="p-2 text-brand-blue bg-brand-blue/5 rounded-lg"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                          )}
+                          {onDeleteTechnician && (
+                            <button 
+                              onClick={() => onDeleteTechnician(tech.id, tech.name)}
+                              className="p-2 text-red-500 bg-red-50 rounded-lg"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>

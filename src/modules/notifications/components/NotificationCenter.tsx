@@ -68,6 +68,12 @@ export default function NotificationCenter({ notifications, onMarkAsRead, onClos
               const isRead = (notif.readBy || []).includes(userId);
               const isCritical = notif.type === 'fatigue_alert' || notif.severity === 'high';
               
+              // SANITIZADOR DINÁMICO:
+              // Si el mensaje ya incluye el nombre al inicio, lo removemos temporalmente para el renderizado
+              const mensajeLimpio = notif.userName && notif.message.startsWith(notif.userName)
+                ? notif.message.replace(notif.userName, '').trim()
+                : notif.message;
+
               return (
                 <div 
                   key={notif.id} 
@@ -94,8 +100,8 @@ export default function NotificationCenter({ notifications, onMarkAsRead, onClos
                         "text-xs leading-relaxed",
                         !isRead ? "text-slate-900 font-bold" : "text-slate-500 font-medium"
                       )}>
-                        {notif.userName && <span className="text-brand-blue">{notif.userName} </span>}
-                        {notif.message}
+                        {notif.userName && <span className="font-bold text-blue-600 hover:underline cursor-pointer mr-1">{notif.userName}</span>}
+                        {mensajeLimpio}
                       </p>
                       <p className="text-[10px] text-slate-400 mt-1 font-bold italic">
                         {formatDateSpanish(notif.createdAt.toDate(), "HH:mm · d 'de' MMM")}

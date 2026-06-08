@@ -71,10 +71,6 @@ export default function RecycleBin({
             <h2 className="text-lg sm:text-xl font-display font-black text-slate-900 tracking-tight uppercase truncate">Papelera de Reciclaje</h2>
             <div className="flex flex-wrap items-center gap-2 mt-0.5">
               <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Elementos borrados hace menos de 30 días</p>
-              <div className="hidden sm:block w-1.5 h-1.5 rounded-full bg-slate-300" />
-              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-1">
-                Central Maracay 4357
-              </p>
             </div>
           </div>
         </div>
@@ -126,12 +122,12 @@ export default function RecycleBin({
 
       {/* Main Container */}
       <div className="glass-card overflow-hidden min-h-[500px] flex flex-col p-0 bg-white">
-        <div className="p-4 border-b border-slate-100 bg-white flex flex-col sm:flex-row gap-4 items-center">
-          <div className="flex items-center flex-1 w-full max-w-2xl mx-auto bg-slate-100/80 border border-slate-300 shadow-inner hover:border-slate-400 rounded-xl px-3 py-2.5 focus-within:ring-2 focus-within:ring-brand-blue/30 focus-within:border-brand-blue focus-within:bg-white transition-all min-h-[46px]">
+        <div className="p-4 border-b border-slate-100 bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 w-full pb-4">
+          <div className="flex items-center w-full max-w-md bg-slate-100/80 border border-slate-300 shadow-inner hover:border-slate-400 rounded-xl px-3 py-2.5 focus-within:ring-2 focus-within:ring-brand-blue/30 focus-within:border-brand-blue focus-within:bg-white transition-all min-h-[46px]">
             <Search size={16} className="text-slate-500 mr-2 shrink-0" />
             <input 
               type="text" 
-              placeholder={`Buscar en la papelera...`}
+              placeholder="Buscar en la papelera..."
               className="bg-transparent border-none outline-none w-full text-sm font-bold text-slate-800 placeholder:text-slate-500 min-w-0"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
@@ -142,75 +138,65 @@ export default function RecycleBin({
               </button>
             )}
           </div>
-          <div className="flex items-center justify-center gap-2 text-[8px] sm:text-[10px] font-bold text-amber-600 bg-amber-50 px-3 sm:px-4 py-2 rounded-xl border border-amber-100 shrink-0 w-full sm:w-auto text-center sm:text-left">
+          <div className="flex items-center justify-center gap-2 text-[10px] font-bold text-amber-600 bg-amber-50 px-3.5 py-2 rounded-xl border border-amber-100 shrink-0 w-full sm:w-auto text-center sm:text-left tracking-wider uppercase">
             <Clock size={14} className="shrink-0" />
             <span>LIMPIEZA AUTOMÁTICA EN 30 DÍAS</span>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-50/20">
           {activeSubTab === 'activities' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch">
               {filteredActivities.length > 0 ? (
                 filteredActivities.map(activity => (
-                  <div key={activity.id} className="relative p-6 bg-white border-2 border-slate-100 rounded-[2rem] hover:shadow-2xl hover:border-brand-blue/10 transition-all duration-300 flex flex-col h-full justify-between">
-                    <div className="space-y-4">
+                  <div key={activity.id} className="relative p-5 bg-slate-50 border border-slate-200 shadow-sm rounded-2xl hover:shadow-md hover:border-slate-300 transition-all duration-300 flex flex-col h-full justify-between">
+                    <div>
                       {/* Top Header Row of Card */}
-                      <div className="flex items-center justify-between">
-                        <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-500 border border-slate-100 shadow-inner group-hover:scale-110 transition-transform">
-                          <Trash2 size={24} />
-                        </div>
-                        {activity.deletedAt && (
-                          <span className={cn(
-                            "text-[10px] font-black px-2.5 py-1 rounded-xl border flex items-center gap-1.5 shrink-0",
-                            getRemainingDays(activity.deletedAt) <= 5 
-                              ? "bg-red-50 text-red-600 border-red-100 animate-pulse" 
-                              : "bg-amber-50 text-amber-700 border-amber-300/60"
-                          )}>
-                            ⚠️ {getRemainingDays(activity.deletedAt)} días restantes
-                          </span>
-                        )}
+                      <div className="w-full">
+                        <h4 className="text-sm font-bold text-slate-800 tracking-tight leading-snug truncate" title={activity.title}>{activity.title}</h4>
                       </div>
                       
                       {/* Content Area */}
-                      <div>
-                        {/* Audit context (incident, region) */}
-                        <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                          <span className="font-mono text-[9px] font-black px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-600 rounded">
+                      <div className="space-y-3 mt-3">
+                        {/* Audit context (incident, region, and remaining days) */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-mono text-[9px] font-black px-2 py-0.5 bg-slate-100 border border-slate-200/80 text-slate-600 rounded">
                             {activity.incidentNumber ? `${activity.incidentNumber}` : 'LABOR SIN INC.'}
                           </span>
-                          <span className="text-[9px] font-black px-2 py-0.5 bg-blue-50 border border-blue-100 text-brand-blue rounded uppercase tracking-wider">
+                          <span className="text-[9px] font-black px-2 py-0.5 bg-blue-50 border border-blue-100/60 text-brand-blue rounded uppercase tracking-wider">
                             {activity.region || 'Central'}
                           </span>
+                          {activity.deletedAt && (
+                            <span className="text-amber-700 bg-amber-50 border border-amber-200/60 text-[9px] font-bold px-2 py-0.5 rounded flex items-center gap-1 shrink-0">
+                              ⚠️ {getRemainingDays(activity.deletedAt)} días restantes
+                            </span>
+                          )}
                         </div>
-
-                        <h4 className="text-sm font-black text-slate-800 mb-1 leading-snug">{activity.title}</h4>
-                        <p className="text-[10px] text-slate-500 line-clamp-3 leading-relaxed bg-slate-50/50 p-2.5 rounded-xl border border-slate-100">{activity.description}</p>
+ 
+                        <div className="bg-white border border-slate-100 rounded-xl p-3.5 text-xs text-slate-500 leading-relaxed mt-4 font-medium min-h-[72px] line-clamp-4">
+                          {activity.description}
+                        </div>
                       </div>
-
+ 
                       {/* Audit Details */}
-                      <div className="border-t border-slate-100 pt-3 flex flex-col gap-0.5 text-[10.5px]">
-                        <p className="font-medium text-slate-500">
-                          <strong className="text-slate-800 font-extrabold">Borrado por:</strong> {activity.deletedBy || 'Aiken Navas'}
-                        </p>
-                        <p className="text-[9.5px] text-slate-400 font-medium">
-                          Fecha de borrado: {formatDeletedDate(activity.deletedAt)}
-                        </p>
+                      <div className="mt-4 flex flex-col gap-0.5 text-[10px] text-slate-400 font-semibold uppercase tracking-wide">
+                        <div>Borrado por: <span className="text-slate-500">{activity.deletedBy || 'Aiken Navas'}</span></div>
+                        <div>Fecha de borrado: <span className="text-slate-500">{formatDeletedDate(activity.deletedAt)}</span></div>
                       </div>
                     </div>
-
-                    {/* Action buttons footer */}
-                    <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
+ 
+                    {/* Action buttons footer with base line */}
+                    <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between shrink-0">
                       <button 
                         onClick={() => onRestore('activity', activity.id)}
-                        className="px-6 py-2 bg-brand-blue text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-brand-blue-dark shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2"
+                        className="px-4 py-2 bg-[#004a99] hover:bg-blue-800 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg shadow-sm flex items-center gap-1.5 transition-colors focus:outline-none"
                       >
-                        <RotateCcw size={14} />
+                        <RotateCcw size={12} />
                         Restaurar
                       </button>
                       <button 
                         onClick={() => onPermanentDelete('activity', activity.id)}
-                        className="p-2.5 text-red-500 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all border border-transparent hover:border-red-100"
+                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         title="Eliminar permanentemente de la base de datos"
                       >
                         <Trash2 size={16} />
@@ -223,76 +209,65 @@ export default function RecycleBin({
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch">
               {filteredTechnicians.length > 0 ? (
                 filteredTechnicians.map(tech => (
-                  <div key={tech.id} className="relative p-6 bg-white border-2 border-slate-100 rounded-[2rem] hover:shadow-2xl hover:border-brand-blue/10 transition-all duration-300 flex flex-col h-full justify-between">
-                    <div className="space-y-4">
+                  <div key={tech.id} className="relative p-5 bg-slate-50 border border-slate-200 shadow-sm rounded-2xl hover:shadow-md hover:border-slate-300 transition-all duration-300 flex flex-col h-full justify-between">
+                    <div>
                       {/* Top Header Row representing technician card */}
-                      <div className="flex items-center justify-between">
-                        <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-500 border border-slate-100 shadow-inner group-hover:scale-110 transition-transform">
-                          <Trash2 size={24} />
-                        </div>
-                        {tech.deletedAt && (
-                          <span className={cn(
-                            "text-[10px] font-black px-2.5 py-1 rounded-xl border flex items-center gap-1.5 shrink-0",
-                            getRemainingDays(tech.deletedAt) <= 5 
-                              ? "bg-red-50 text-red-600 border-red-100 animate-pulse" 
-                              : "bg-amber-50 text-amber-700 border-amber-300/60"
-                          )}>
-                            ⚠️ {getRemainingDays(tech.deletedAt)} días restantes
-                          </span>
-                        )}
+                      <div className="w-full">
+                        <h4 className="text-sm font-bold text-slate-800 tracking-tight leading-snug truncate" title={tech.name}>
+                          {tech.name}
+                        </h4>
                       </div>
-
+ 
                       {/* Content Area */}
-                      <div>
+                      <div className="space-y-3 mt-3">
                         {/* Name and IDs */}
-                        <h4 className="text-sm font-black text-slate-800 leading-snug mb-1">{tech.name}</h4>
-                        
-                        <div className="flex flex-wrap items-center gap-1.5 my-2">
-                          <span className="font-mono text-[9px] font-black px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-600 rounded" title="Ficha de Personal">
-                            FICHA: {tech.employeeId}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-mono text-[9px] font-black px-2 py-0.5 bg-slate-100 border border-slate-200/80 text-slate-600 rounded" title="P00 / CARNET">
+                            P00: {tech.employeeId}
                           </span>
-                          <span className="font-mono text-[9px] font-black px-2 py-0.5 bg-blue-50 border border-blue-100 text-brand-blue rounded" title="Cédula de Identidad">
+                          <span className="font-mono text-[9px] font-black px-2 py-0.5 bg-blue-50 border border-blue-100/60 text-brand-blue rounded" title="Cédula de Identidad">
                             C.I.: {tech.idCard || 'V-S/N'}
                           </span>
                         </div>
-
+ 
                         {/* Structural Department/Specialty */}
-                        <div className="flex flex-wrap gap-1.5">
-                          <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-md">
+                        <div className="flex flex-wrap gap-1.5 items-center">
+                          <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100/50 rounded-md shrink-0">
                             {tech.specialty || 'General'}
                           </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-100 rounded-md">
+                          <span className="text-[10px] font-bold px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-100/50 rounded-md shrink-0">
                             {tech.department || 'DATOS'}
                           </span>
+                          {tech.deletedAt && (
+                            <span className="text-amber-700 bg-amber-50 border border-amber-200/60 text-[9px] font-bold px-2 py-0.5 rounded flex items-center gap-1 shrink-0">
+                              ⚠️ {getRemainingDays(tech.deletedAt)} días
+                            </span>
+                          )}
                         </div>
                       </div>
-
+ 
                       {/* Audit Details */}
-                      <div className="border-t border-slate-100 pt-3 flex flex-col gap-0.5 text-[10.5px]">
-                        <p className="font-medium text-slate-500">
-                          <strong className="text-slate-800 font-extrabold">Dado de baja por:</strong> {tech.deletedBy || 'Aiken Navas'}
-                        </p>
-                        <p className="text-[9.5px] text-slate-400 font-medium">
-                          Fecha de baja: {formatDeletedDate(tech.deletedAt)}
-                        </p>
+                      <div className="mt-4 flex flex-col gap-0.5 text-[10px] text-slate-400 font-semibold uppercase tracking-wide">
+                        <div>Dado de baja por: <span className="text-slate-500">{tech.deletedBy || 'Aiken Navas'}</span></div>
+                        <div>Fecha de baja: <span className="text-slate-500">{formatDeletedDate(tech.deletedAt)}</span></div>
                       </div>
                     </div>
-
-                    {/* Action buttons footer */}
-                    <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
+ 
+                    {/* Action buttons footer with base line */}
+                    <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between shrink-0">
                       <button 
                         onClick={() => onRestore('technician', tech.id)}
-                        className="px-6 py-2 bg-brand-blue text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-brand-blue-dark shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2"
+                        className="px-4 py-2 bg-[#004a99] hover:bg-blue-800 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg shadow-sm flex items-center gap-1.5 transition-colors focus:outline-none"
                       >
-                        <RotateCcw size={14} />
-                        Activar
+                        <RotateCcw size={12} />
+                        Restaurar
                       </button>
                       <button 
                         onClick={() => onPermanentDelete('technician', tech.id)}
-                        className="p-2.5 text-red-500 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all border border-transparent hover:border-red-100"
+                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         title="Eliminar permanentemente de la base de datos"
                       >
                         <Trash2 size={16} />

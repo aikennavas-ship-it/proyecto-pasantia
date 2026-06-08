@@ -33,28 +33,31 @@ import {
 } from 'firebase/firestore';
 import { auth, db, firebaseConfig } from './firebase';
 import { initializeApp, getApp } from 'firebase/app';
-import { getAuth as getSecondaryAuth, signOut as signSecondaryOut, createUserWithEmailAndPassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential, updatePassword, updateProfile } from 'firebase/auth';
+import { getAuth as getSecondaryAuth, signOut as signSecondaryOut, createUserWithEmailAndPassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential, updatePassword, updateProfile, deleteUser } from 'firebase/auth';
 import { Activity, UserProfile, Technician } from './types';
 
 // ======================================
 // IMPORTACIÓN DE MÓDULOS DE NEGOCIO
 // ======================================
+import { lazy, Suspense } from 'react';
 import Layout from './modules/core/components/Layout';
-import Dashboard from './modules/dashboard/components/Dashboard';
 import ActivityCard from './modules/activities/components/ActivityCard';
 import ActivityForm, { formatHours } from './modules/activities/components/ActivityForm';
 import ActivityDetailModal from './modules/activities/components/ActivityDetailModal';
 import Login from './modules/auth/components/Login';
-import TechnicianManagement from './modules/technicians/components/TechnicianManagement';
-import ReportGenerator from './modules/reports/components/ReportGenerator';
-import SmartSpreadsheet from './modules/activities/components/SmartSpreadsheet';
-import TechHistoryView from './modules/activities/components/TechHistoryView';
 import ConfirmationModal from './modules/core/components/ConfirmationModal';
-import RecycleBin from './modules/recycle-bin/components/RecycleBin';
 import TechnicianForm from './modules/technicians/components/TechnicianForm';
 
-import { Plus, Search, Filter, ClipboardList, Settings, Download, FileText, Table, Users, Target, Eye, ShieldCheck, History, LayoutGrid, List, Camera, UserCircle, Check, X, Loader2, Database, Lock, Shield, Moon, Sun, Award, Sliders, Briefcase, Info } from 'lucide-react';
-import { cn } from './lib/utils';
+const Dashboard = lazy(() => import('./modules/dashboard/components/Dashboard'));
+const TechnicianManagement = lazy(() => import('./modules/technicians/components/TechnicianManagement'));
+const ReportGenerator = lazy(() => import('./modules/reports/components/ReportGenerator'));
+const SmartSpreadsheet = lazy(() => import('./modules/activities/components/SmartSpreadsheet'));
+const TechHistoryView = lazy(() => import('./modules/activities/components/TechHistoryView'));
+const RecycleBin = lazy(() => import('./modules/recycle-bin/components/RecycleBin'));
+
+import { Plus, Search, Filter, ClipboardList, Settings, Download, FileText, Table, Users, Target, Eye, ShieldCheck, History, LayoutGrid, List, Camera, UserCircle, Check, X, Loader2, Database, Lock, Shield, Moon, Sun, Award, Sliders, Briefcase, Info, Edit2, Trash2 } from 'lucide-react';
+import { cn, resolverPermisosDeSesion } from './lib/utils';
+import { generarMensajeLogin } from './lib/formateador';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -75,7 +78,7 @@ function decorateActivity(docData: any, docId: string): Activity {
   const incidentNumber = docData.incidentNumber || `INC-${2026000 + Math.abs(hashCode(id)) % 10000}`;
   
   // Morning block fallbacks
-  const startTimeMorning = docData.startTimeMorning || docData.startTime || '07:45';
+  const startTimeMorning = docData.startTimeMorning || docData.startTime || '07:30';
   const endTimeMorning = docData.endTimeMorning || '11:45';
   const hasPause = docData.hasPause || 'SI';
   
@@ -108,12 +111,12 @@ function decorateActivity(docData: any, docId: string): Activity {
   }
 
   // Calculate Overtime and Deficit Hours according to system rules
-  let virtualMorning = (emTime - 11.75) + 4; // Base 4h
-  let virtualAfternoon = (eaTime - 16) + 3.25; // Base 3.25h
+  let virtualMorning = emTime - smTime;
+  let virtualAfternoon = eaTime - saTime;
   let virtualTotal = virtualMorning + virtualAfternoon;
-  let otHours = virtualTotal - 7.25; // Jornada de 7.25h
+  let otHours = virtualTotal - 7.5; // Jornada de 7.5h (450 min)
   if (hasPause === 'NO' && virtualMorning > 0 && virtualAfternoon > 0) {
-    otHours += 1;
+    otHours += 1; // Se suma 1 hora de trabajo si no hubo pausa
   }
   const overtimeHours = Number(otHours.toFixed(4));
   const totalHours = Number(totalWorkedHours.toFixed(4));
@@ -224,6 +227,7 @@ export default function App() {
   const [isExportMenuOpen, setIsExportMenuOpen] = React.useState(false);
   const [selectedDate, setSelectedDate] = React.useState(new Date()); // Fecha para la hoja de actividades
   const [userProfile, setUserProfile] = React.useState<UserProfile | null>(null);
+  const [isProfileLoading, setIsProfileLoading] = React.useState(true);
   const [isUnauthorized, setIsUnauthorized] = React.useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = React.useState(false);
   const [profileForm, setProfileForm] = React.useState({
@@ -233,11 +237,24 @@ export default function App() {
 
   const [suspendedStatus, setSuspendedStatus] = React.useState<string | null>(null);
 
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = React.useState(false);
+  const [contrasenaConfirmacion, setContrasenaConfirmacion] = React.useState('');
+  const [errorBorrado, setErrorBorrado] = React.useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = React.useState(false);
+
   const [techProfileInfo, setTechProfileInfo] = React.useState<{
+    name?: string;
     employeeId: string;
     idCard: string;
     specialty: string;
     department: string;
+    phoneNumber?: string;
+    fechaNacimiento?: string;
+    fechaIngreso?: string;
+    tallaBotas?: string;
+    tallaCamisa?: string;
+    tallaPantalon?: string;
+    direccion?: string;
   } | null>(null);
 
   React.useEffect(() => {
@@ -270,43 +287,7 @@ export default function App() {
     'asistente@cantv.com.ve'
   ], []);
 
-  // Perfil de usuario activo con fallbacks a datos locales o a la sesión de Firebase Auth 
-  // para evitar pantallas con nombres de usuario vacíos u otros glitch de carga.
-  const activeUserProfile = React.useMemo((): UserProfile | null => {
-    if (!user) return null;
-    let normalizedRole: 'tecnico' | 'supervisor' | 'admin' = (ADMIN_EMAILS.includes(user.email || '') ? 'admin' : 'tecnico');
-    const rawRole = userProfile?.role;
-    if (rawRole) {
-      const lower = rawRole.toLowerCase().trim();
-      if (lower === 'técnico' || lower === 'tecnico' || lower === 'technician' || lower === 'tecnico especialista') {
-        normalizedRole = 'tecnico';
-      } else if (lower === 'administrador' || lower === 'admin') {
-        normalizedRole = 'admin';
-      } else if (lower === 'supervisor' || lower === 'manager') {
-        normalizedRole = 'supervisor';
-      }
-    }
-
-    return {
-      uid: user.uid,
-      email: user.email || '',
-      displayName: userProfile?.displayName || user.displayName || user.email?.split('@')[0] || 'Usuario',
-      photoURL: userProfile?.photoURL || user.photoURL || '',
-      role: normalizedRole,
-      department: userProfile?.department || 'Datos',
-      allowPasswordChange: userProfile?.allowPasswordChange || false,
-      createdAt: userProfile?.createdAt || Timestamp.now()
-    };
-  }, [user, userProfile, ADMIN_EMAILS]);
-
-  React.useEffect(() => {
-    if (activeUserProfile) {
-      setProfileForm({
-        displayName: activeUserProfile.displayName || '',
-        photoURL: activeUserProfile.photoURL || ''
-      });
-    }
-  }, [activeUserProfile]);
+  // activeUserProfile will be defined below after technicians lists are initialized.
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -316,8 +297,13 @@ export default function App() {
     try {
       const docRef = doc(db, 'users', user.uid);
       const updatedData = {
+        uid: user.uid,
+        email: user.email || '',
         displayName: profileForm.displayName,
-        photoURL: profileForm.photoURL
+        photoURL: profileForm.photoURL || null,
+        role: activeUserProfile?.role || (ADMIN_EMAILS.includes(user.email || '') ? 'admin' : 'tecnico'),
+        department: activeUserProfile?.department || 'Datos',
+        createdAt: activeUserProfile?.createdAt || Timestamp.now()
       };
       
       await setDoc(docRef, updatedData, { merge: true });
@@ -444,6 +430,58 @@ export default function App() {
     }
   };
 
+  const handleVerifyDeleteSelf = () => {
+    setContrasenaConfirmacion('');
+    setErrorBorrado(null);
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const handleEjecutarBorradoSeguro = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!auth.currentUser || !auth.currentUser.email) return;
+
+    try {
+      setIsDeleting(true);
+      setErrorBorrado(null);
+
+      // 1. Crear la credencial de re-autenticación
+      const credential = EmailAuthProvider.credential(
+        auth.currentUser.email,
+        contrasenaConfirmacion
+      );
+
+      // 2. Validar la contraseña contra los servidores de Firebase Auth (Re-auth)
+      await reauthenticateWithCredential(auth.currentUser, credential);
+      console.log("✓ Re-autenticación exitosa. Procediendo con el borrado seguro...");
+
+      // 3. Buscar perfil correspondiente si existe en technicians para borrar de la base de datos
+      const matchingTech = (technicians || []).find(
+        t => t.email && t.email.toLowerCase().trim() === auth.currentUser?.email?.toLowerCase().trim()
+      );
+      if (matchingTech?.id) {
+        await deleteDoc(doc(db, 'technicians', matchingTech.id));
+      }
+
+      // Eliminar el documento de Firestore de la colección users
+      await deleteDoc(doc(db, 'users', auth.currentUser.uid));
+      console.log("✓ Documentos de Firestore eliminados.");
+
+      // 4. Eliminar el usuario de Firebase Auth de forma definitiva
+      await deleteUser(auth.currentUser);
+      console.log("✓ Usuario de Firebase Auth eliminado.");
+
+      setIsDeleteConfirmOpen(false);
+    } catch (error: any) {
+      console.error("Error durante el borrado seguro:", error);
+      if (error.code === 'auth/wrong-password') {
+        setErrorBorrado("La contraseña ingresada es incorrecta. Inténtalo de nuevo.");
+      } else {
+        setErrorBorrado("Ocurrió un error al procesar la solicitud de baja de cuenta: " + (error.message || error.code));
+      }
+      setIsDeleting(false);
+    }
+  };
+
   const handleSaveParams = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingParams(true);
@@ -488,193 +526,36 @@ export default function App() {
     }
 
     const docRef = doc(db, 'users', user.uid);
-    let isProvisioningComplete = false;
 
     const unsubscribeProfile = onSnapshot(docRef, async (docSnap) => {
-      // 1. Sincronización en tiempo real garantizada (si el documento existe)
-      if (docSnap.exists()) {
-        setUserProfile(docSnap.data() as UserProfile);
-        
-        // Si ya se hizo la verificación inicial (whitelist/provisioning), no ejecutarla de nuevo
-        if (isProvisioningComplete) return;
-      }
-
-      // 2. Provisión inicial y Whitelist (Corre solo una vez por sesión)
-      if (isProvisioningComplete) return;
-      isProvisioningComplete = true;
-
       try {
-        const trimmedEmail = user.email ? user.email.toLowerCase().trim() : '';
-
-        const AUTO_WHITELIST: Record<string, { role: 'admin' | 'supervisor' | 'tecnico', name: string, emp: string, ic: string, specialty: string, department: string }> = {
-          'aiknav@cantv.com.ve': { role: 'admin', name: 'Aiken Navas', emp: 'P00-111111', ic: 'V-11.111.111', specialty: 'Administrador General', department: 'Gerencia y Soporte' },
-          'ana.silva@cantv.com.ve': { role: 'supervisor', name: 'Ana Silva', emp: 'P00-235235', ic: 'V-12.312.312', specialty: 'Supervisor Técnico', department: 'Datos y Transmisión' },
-          'anabolena@cantv.com.ve': { role: 'supervisor', name: 'Ana Silva', emp: 'P00-235235', ic: 'V-12.312.312', specialty: 'Supervisor Técnico', department: 'Datos y Transmisión' },
-        };
-
-        const isAdminEmail = trimmedEmail && (ADMIN_EMAILS.includes(trimmedEmail) || trimmedEmail === 'aiknav@cantv.com.ve');
-        
+        let profileToSet: UserProfile | null = null;
         let targetRole: 'admin' | 'supervisor' | 'tecnico' = 'tecnico';
-        let techName = '';
-        let fetchedPhotoURL = '';
-        
-        if (trimmedEmail && AUTO_WHITELIST[trimmedEmail]) {
-          const whitelisted = AUTO_WHITELIST[trimmedEmail];
-          targetRole = whitelisted.role;
-          techName = whitelisted.name;
-          setTechProfileInfo({
-            employeeId: whitelisted.emp,
-            idCard: whitelisted.ic,
-            specialty: whitelisted.specialty,
-            department: whitelisted.department
-          });
-          setIsUnauthorized(false);
+        const trimmedEmail = user.email ? user.email.toLowerCase().trim() : '';
+        const isAdminEmail = trimmedEmail && (ADMIN_EMAILS.includes(trimmedEmail) || trimmedEmail === 'aiknav@cantv.com.ve');
 
-          try {
-            const { collection, query, where, getDocs, addDoc, Timestamp } = await import('firebase/firestore');
-            const techQuery = query(collection(db, 'technicians'), where('email', '==', trimmedEmail));
-            const techSnap = await getDocs(techQuery);
-            if (techSnap.empty) {
-              await addDoc(collection(db, 'technicians'), {
-                name: whitelisted.name,
-                email: trimmedEmail,
-                role: whitelisted.role === 'admin' ? 'admin' : whitelisted.role,
-                employeeId: whitelisted.emp,
-                idCard: whitelisted.ic,
-                specialty: whitelisted.specialty,
-                department: whitelisted.department,
-                status: 'activo',
-                isDeleted: false,
-                createdAt: Timestamp.now()
-              });
-            } else {
-              // Si ya existe en la base de datos, respetar el rol y datos que tenga configurados
-              const activeDbDoc = techSnap.docs.find(doc => doc.data() && doc.data().isDeleted !== true);
-              if (activeDbDoc) {
-                targetRole = activeDbDoc.data().role || targetRole;
-              }
-            }
-          } catch (err) {
-            console.error("Auto seeding error:", err);
-          }
-        } else if (isAdminEmail) {
-          targetRole = 'admin';
-          setTechProfileInfo({
-            employeeId: 'P00-111111',
-            idCard: 'V-11.111.111',
-            specialty: 'Administrador General',
-            department: 'Gerencia y Soporte'
-          });
-          setIsUnauthorized(false);
-        } else if (user.email) {
-          try {
-            const techQuery = query(collection(db, 'technicians'), where('email', '==', user.email.toLowerCase().trim()));
-            const techSnap = await getDocs(techQuery);
-            
-            // Prefer an active doc if available, otherwise take any (even deleted)
-            let matchingTechDoc = techSnap.docs.find(doc => {
-              const data = doc.data();
-              return data && data.isDeleted !== true;
-            });
-
-            if (!matchingTechDoc && techSnap.docs.length > 0) {
-              matchingTechDoc = techSnap.docs[0];
-            }
-            
-            if (matchingTechDoc) {
-              const techData = matchingTechDoc.data();
-              const currentStatus = (techData.status || '').toLowerCase().trim();
-              const isSoftDeleted = techData.isDeleted === true;
-
-              if (isSoftDeleted || currentStatus === 'inactivo' || currentStatus === 'baja' || currentStatus === 'reposo' || currentStatus === 'vacaciones') {
-                const finalSuspensionStatus = isSoftDeleted ? 'baja' : currentStatus;
-                setSuspendedStatus(finalSuspensionStatus);
-                setIsUnauthorized(true);
-                return;
-              } else {
-                setSuspendedStatus(null);
-              }
-
-              targetRole = techData.role || 'tecnico';
-              techName = techData.name || '';
-              fetchedPhotoURL = techData.photoURL || '';
-              
-              if (!techData.uid && user.uid) {
-                try {
-                  await setDoc(doc(db, 'technicians', matchingTechDoc.id), { uid: user.uid }, { merge: true });
-                } catch (uidUpdateErr) {
-                  console.error("Failed to set uid in technicians document:", uidUpdateErr);
-                }
-              }
-              
-              setTechProfileInfo({
-                employeeId: techData.employeeId || (targetRole === 'admin' ? 'P00-111111' : 'P00-NO-ASIG'),
-                idCard: techData.idCard || (targetRole === 'admin' ? 'V-11.111.111' : 'V-00.000.000'),
-                specialty: techData.specialty || (targetRole === 'admin' ? 'Administrador General' : 'Especialista'),
-                department: techData.department || 'Datos y Transmisión'
-              });
-              setIsUnauthorized(false);
-            } else {
-              setIsUnauthorized(true);
-              return;
-            }
-          } catch (error) {
-            console.error("Error looking up technician whitelist in Firestore:", error);
-            if (docSnap && docSnap.exists()) {
-              const profileData = docSnap.data() as UserProfile;
-              targetRole = profileData.role || 'tecnico';
-              techName = profileData.displayName || '';
-              setTechProfileInfo({
-                employeeId: targetRole === 'admin' ? 'P00-111111' : ((profileData as any).employeeId || 'P00-245813'),
-                idCard: targetRole === 'admin' ? 'V-11.111.111' : 'V-00.000.000',
-                specialty: targetRole === 'admin' ? 'Administrador General' : 'Soporte Técnico',
-                department: 'Datos y Transmisión'
-              });
-              setIsUnauthorized(false);
-            } else {
-              setIsUnauthorized(true);
-              return;
-            }
-          }
-        }
-
-        let profile: UserProfile;
+        // 1. FUENTE DE VERDAD ÚNICA: Leer perfil desde 'users'
         if (docSnap.exists()) {
-          profile = docSnap.data() as UserProfile;
-          let needsUpdate = false;
-          let updatedFields: Partial<UserProfile> = {};
+          const profileData = docSnap.data() as UserProfile;
+          let rawRole = profileData.role || 'tecnico';
           
-          if (profile.role !== targetRole) {
-            profile.role = targetRole as any;
-            updatedFields.role = targetRole as any;
-            needsUpdate = true;
+          if (rawRole) {
+            const rl = rawRole.toLowerCase().trim();
+            if (rl.includes('admin')) {
+              targetRole = 'admin';
+            } else if (rl.includes('super')) {
+              targetRole = 'supervisor';
+            }
           }
-          
-          if (techName && !profile.displayName) {
-            profile.displayName = techName;
-            updatedFields.displayName = techName;
-            needsUpdate = true;
-          }
-          
-          if (fetchedPhotoURL && !profile.photoURL) {
-            profile.photoURL = fetchedPhotoURL;
-            updatedFields.photoURL = fetchedPhotoURL;
-            needsUpdate = true;
-          } else if (user.photoURL && !profile.photoURL) {
-            profile.photoURL = user.photoURL;
-            updatedFields.photoURL = user.photoURL;
-            needsUpdate = true;
-          }
-          
-          if (needsUpdate) {
-            await setDoc(docRef, updatedFields, { merge: true });
-          }
+          profileToSet = { ...profileData, role: targetRole as any } as UserProfile;
         } else {
-          let rawName = techName || user.displayName || user.email?.split('@')[0] || 'Usuario';
+          // Si no existe, crear perfil temporal de fallback y persistirlo para que otros módulos (y reglas Firestore) puedan validarlo
+          targetRole = isAdminEmail ? 'admin' : 'tecnico';
+          let rawName = user.displayName || user.email?.split('@')[0] || 'Usuario';
           rawName = rawName.replace(/[^a-zA-Z\s]/g, ' ').trim().replace(/\s+/g, ' '); 
           let formattedName = rawName.split(' ').map((idx: string) => idx.charAt(0).toUpperCase() + idx.slice(1).toLowerCase()).join(' ');
 
-          profile = {
+          profileToSet = {
             uid: user.uid,
             email: user.email || '',
             displayName: formattedName,
@@ -682,52 +563,72 @@ export default function App() {
             role: targetRole as any,
             department: 'Datos',
             createdAt: Timestamp.now(),
-          };
-          await setDoc(docRef, profile);
-          setUserProfile(profile); // Ensure local state is updated immediately on creation
-        }
-        
-        if (targetRole === 'admin' && user.email) {
+          } as UserProfile;
+
+          // Se persiste una única vez (no sobreescribe en logins futuros)
           try {
-            const techQuery = query(collection(db, 'technicians'), where('email', '==', user.email.toLowerCase().trim()));
-            const techSnap = await getDocs(techQuery);
-            for (const document of techSnap.docs) {
-              if (document.data()?.role !== 'admin') {
-                await setDoc(doc(db, 'technicians', document.id), { role: 'admin' }, { merge: true });
-              }
-            }
-          } catch (e) {
-            console.error("Failed to sync admin role to technicians DB", e);
+            await setDoc(docRef, profileToSet);
+          } catch (createErr) {
+            console.error("No se pudo crear el documento de perfil persistente (la sesión continuará en memoria):", createErr);
           }
         }
+        
+        setUserProfile(profileToSet);
+        setIsProfileLoading(false); // Damos por terminada la carga de sesión crítica
 
+        // 2. Extraer datos complementarios de la grilla (Ficha, Especialidad) sin sobreescribir el perfil
+        if (trimmedEmail) {
+          const { collection, query, where, getDocs } = await import('firebase/firestore');
+          const techQuery = query(collection(db, 'technicians'), where('email', '==', trimmedEmail));
+          const techSnap = await getDocs(techQuery);
+          
+          let matchingTechDoc = techSnap.docs.find(doc => doc.data() && doc.data().isDeleted !== true);
+          if (!matchingTechDoc && techSnap.docs.length > 0) matchingTechDoc = techSnap.docs[0];
+          
+          if (matchingTechDoc) {
+             const techData = matchingTechDoc.data();
+             const currentStatus = (techData.status || '').toLowerCase().trim();
+             const isSoftDeleted = techData.isDeleted === true;
+
+             if (isSoftDeleted || currentStatus === 'inactivo' || currentStatus === 'baja' || currentStatus === 'reposo' || currentStatus === 'vacaciones') {
+                setSuspendedStatus(isSoftDeleted ? 'baja' : currentStatus);
+                setIsUnauthorized(true);
+             } else {
+                setSuspendedStatus(null);
+                setIsUnauthorized(false);
+             }
+
+             setTechProfileInfo({
+                name: techData.name,
+                employeeId: techData.employeeId || (targetRole === 'admin' ? 'P00-111111' : 'P00-NO-ASIG'),
+                idCard: techData.idCard || (targetRole === 'admin' ? 'V-11.111.111' : 'V-00.000.000'),
+                specialty: techData.specialty || (targetRole === 'admin' ? 'Administrador General' : 'Especialista'),
+                department: techData.department || 'Datos y Transmisión',
+                phoneNumber: techData.phone || techData.phoneNumber,
+                fechaNacimiento: techData.fechaNacimiento,
+                fechaIngreso: techData.fechaIngreso,
+                tallaBotas: techData.tallaBotas,
+                tallaCamisa: techData.tallaCamisa,
+                tallaPantalon: techData.tallaPantalon,
+                direccion: techData.direccion
+             });
+          } else {
+             setTechProfileInfo({
+                employeeId: targetRole === 'admin' ? 'P00-111111' : 'P00-245813',
+                idCard: targetRole === 'admin' ? 'V-11.111.111' : 'V-00.000.000',
+                specialty: targetRole === 'admin' ? 'Administrador General' : 'Soporte Técnico',
+                department: 'Datos y Transmisión'
+             });
+             setIsUnauthorized(false);
+          }
+        }
       } catch (err: any) {
         if (err?.message?.includes('offline')) {
-          console.warn("Firestore operating in offline mode. Falling back to cached or local simulation for profile.");
+          console.warn("Firestore operating in offline mode. Falling back to cached simulation for profile.");
         } else {
-          console.error("Error in profile provisioning, falling back to local simulation:", err);
+          console.error("Error in profile provisioning:", err);
         }
-        const isAdminEmail = user.email && ADMIN_EMAILS.includes(user.email);
-        let rawName = user?.displayName || user?.email?.split('@')[0] || 'Usuario';
-        rawName = rawName.replace(/[^a-zA-Z\s]/g, ' ').trim().replace(/\s+/g, ' '); 
-        let formattedName = rawName.split(' ').map((idx: string) => idx.charAt(0).toUpperCase() + idx.slice(1).toLowerCase()).join(' ');
-        
-        const fallbackProfile: UserProfile = {
-          uid: user.uid,
-          email: user.email || '',
-          displayName: formattedName,
-          photoURL: user?.photoURL || '',
-          role: (isAdminEmail ? 'admin' : 'tecnico') as any,
-          department: 'Datos',
-          createdAt: Timestamp.now(),
-        };
-        setTechProfileInfo({
-          employeeId: isAdminEmail ? 'P00-111111' : 'P00-245813',
-          idCard: 'V-11.111.111',
-          specialty: isAdminEmail ? 'Administrador General' : 'Soporte Técnico',
-          department: 'Datos y Transmisión'
-        });
-        setUserProfile(fallbackProfile);
+        setIsProfileLoading(false);
         setIsUnauthorized(false);
       }
     });
@@ -759,32 +660,91 @@ export default function App() {
     fetchSystemConfig();
   }, [user]);
 
-  const isGeneralAdmin = activeUserProfile?.role === 'admin';
-  const isManager = isGeneralAdmin || activeUserProfile?.role === 'supervisor';
+  // ------------------------------------------------------------------
+  // technicians and activeUserProfile Definition
+  // ------------------------------------------------------------------
+  const techniciansQuery = React.useMemo(() => {
+    return user && !isUnauthorized ? query(
+      collection(db, 'technicians'),
+      orderBy('name', 'asc')
+    ) : null;
+  }, [user, isUnauthorized]);
+  const [techniciansSnapshot, techniciansLoading] = useCollection(techniciansQuery);
+  const technicians = React.useMemo(() => techniciansSnapshot?.docs.map(doc => ({ id: doc.id, ...doc.data() } as Technician)).filter(t => t.isDeleted !== true) || [], [techniciansSnapshot]);
 
-  const activitiesQuery = user && !isUnauthorized ? query(
-    collection(db, 'activities'),
-    orderBy('date', 'desc')
-  ) : null;
+  // Perfil de usuario activo con fallbacks a datos de la colección de técnicos en tiempo real, 
+  // datos locales o a la sesión de Firebase Auth para evitar pantallas con nombres de usuario vacíos u otros glitch de carga.
+  const activeUserProfile = React.useMemo((): UserProfile | null => {
+    if (!user) return null;
+    let normalizedRole: 'tecnico' | 'supervisor' | 'admin' = (ADMIN_EMAILS.includes(user.email || '') ? 'admin' : 'tecnico');
+    const rawRole = userProfile?.role;
+    if (rawRole) {
+      const lower = rawRole.toLowerCase().trim();
+      if (lower === 'técnico' || lower === 'tecnico' || lower === 'technician' || lower === 'tecnico especialista') {
+        normalizedRole = 'tecnico';
+      } else if (lower === 'administrador' || lower === 'admin') {
+        normalizedRole = 'admin';
+      } else if (lower === 'supervisor' || lower === 'manager') {
+        normalizedRole = 'supervisor';
+      }
+    }
+
+    // Determine matching technician directly from the real-time collection to respect updates 
+    const matchingTech = technicians.find(t => t.email && t.email.toLowerCase().trim() === user.email?.toLowerCase().trim());
+    const displayName = matchingTech?.name || userProfile?.displayName || user.displayName || user.email?.split('@')[0] || 'Usuario';
+    const photoURL = matchingTech?.photoURL || userProfile?.photoURL || user.photoURL || '';
+
+    return {
+      uid: user.uid,
+      email: user.email || '',
+      displayName,
+      photoURL,
+      role: normalizedRole,
+      department: matchingTech?.department || userProfile?.department || 'Datos',
+      allowPasswordChange: userProfile?.allowPasswordChange || false,
+      createdAt: userProfile?.createdAt || Timestamp.now()
+    };
+  }, [user, userProfile, ADMIN_EMAILS, technicians]);
+
+  React.useEffect(() => {
+    if (activeUserProfile) {
+      setProfileForm({
+        displayName: activeUserProfile.displayName || '',
+        photoURL: activeUserProfile.photoURL || ''
+      });
+    }
+  }, [activeUserProfile]);
+
+  const permisos = React.useMemo(() => resolverPermisosDeSesion(activeUserProfile?.role), [activeUserProfile?.role]);
+  const isGeneralAdmin = permisos.esAdmin;
+  const isManager = permisos.esAdmin || permisos.esSupervisor;
+
+  const activitiesQuery = React.useMemo(() => {
+    return user && !isUnauthorized ? query(
+      collection(db, 'activities'),
+      orderBy('date', 'desc')
+    ) : null;
+  }, [user, isUnauthorized]);
   
   const [activitiesSnapshot, activitiesLoading] = useCollection(activitiesQuery);
   const activities = React.useMemo(() => {
     const arr = activitiesSnapshot?.docs.map(doc => decorateActivity(doc.data(), doc.id)).filter(a => a.isDeleted !== true) || [];
-    if (activeUserProfile?.role === 'tecnico') {
-      const name = activeUserProfile.displayName || '';
+    if (permisos.esTecnico) {
+      const name = activeUserProfile?.displayName || '';
       return arr.filter(a => 
         a.adminId === user?.uid ||
         (a.participants && a.participants.some(p => p && p.toLowerCase() === name.toLowerCase()))
       );
     }
     return arr;
-  }, [activitiesSnapshot, activeUserProfile, user]);
+  }, [activitiesSnapshot, activeUserProfile, user, permisos]);
 
   // Self-Healing Background Database Backfill
   const healedDocsTracker = React.useRef<Set<string>>(new Set());
 
   React.useEffect(() => {
-    if (activitiesLoading || !activitiesSnapshot || !user) return;
+    if (activitiesLoading || !activitiesSnapshot || !user || !activeUserProfile) return;
+    if (activeUserProfile.role !== 'admin' && activeUserProfile.role !== 'supervisor') return;
     
     const docsToHeal = activitiesSnapshot.docs.filter(doc => {
       const data = doc.data();
@@ -847,18 +807,18 @@ export default function App() {
 
   const visibleActivities = React.useMemo(() => {
     if (!activities) return [];
-    if (activeUserProfile?.role === 'admin' || activeUserProfile?.role === 'supervisor') {
+    if (permisos.esAdmin || permisos.esSupervisor) {
       return activities;
     }
-    if (activeUserProfile?.role === 'tecnico') {
-      const name = activeUserProfile.displayName || '';
+    if (permisos.esTecnico) {
+      const name = activeUserProfile?.displayName || '';
       return activities.filter(a => 
         a.adminId === user?.uid ||
         (a.participants && a.participants.some(p => p && p.toLowerCase() === name.toLowerCase()))
       );
     }
     return activities.filter(a => a.adminId === user?.uid);
-  }, [activities, user, activeUserProfile]);
+  }, [activities, user, activeUserProfile, technicians, permisos]);
 
   // Tab Enforcement based on Role
   React.useEffect(() => {
@@ -911,12 +871,7 @@ export default function App() {
     }
   }, [activities, isGeneralAdmin]);
 
-  const techniciansQuery = user && !isUnauthorized ? query(
-    collection(db, 'technicians'),
-    orderBy('name', 'asc')
-  ) : null;
-  const [techniciansSnapshot, techniciansLoading] = useCollection(techniciansQuery);
-  const technicians = React.useMemo(() => techniciansSnapshot?.docs.map(doc => ({ id: doc.id, ...doc.data() } as Technician)).filter(t => t.isDeleted !== true) || [], [techniciansSnapshot]);
+  // techniciansQuery, techniciansSnapshot and technicians are defined above.
 
   // Sanitizador automático en segundo plano para limpiar nombres con números y corregir correos a institucionales
   React.useEffect(() => {
@@ -988,11 +943,13 @@ export default function App() {
     }
   }, [technicians, isGeneralAdmin]);
 
-  const notificationsQuery = user && !isUnauthorized ? query(
-    collection(db, 'notifications'),
-    orderBy('createdAt', 'desc'),
-    limit(100)
-  ) : null;
+  const notificationsQuery = React.useMemo(() => {
+    return user && !isUnauthorized ? query(
+      collection(db, 'notifications'),
+      orderBy('createdAt', 'desc'),
+      limit(100)
+    ) : null;
+  }, [user, isUnauthorized]);
   const [notificationsSnapshot] = useCollection(notificationsQuery);
   const notifications = React.useMemo(() => {
     const rawNotifs = notificationsSnapshot?.docs.map(doc => ({ id: doc.id, ...doc.data() as any })) || [];
@@ -1059,10 +1016,12 @@ export default function App() {
       readBy: arrayUnion(user.uid)
     }, { merge: true });
   };
-  const deletedActivitiesQuery = user && isGeneralAdmin ? query(
-    collection(db, 'activities'),
-    where('isDeleted', '==', true)
-  ) : null;
+  const deletedActivitiesQuery = React.useMemo(() => {
+    return user && isGeneralAdmin ? query(
+      collection(db, 'activities'),
+      where('isDeleted', '==', true)
+    ) : null;
+  }, [user, isGeneralAdmin]);
   const [deletedActivitiesSnapshot] = useCollection(deletedActivitiesQuery);
   const deletedActivities = React.useMemo(() => {
     const items = deletedActivitiesSnapshot?.docs.map(doc => ({ id: doc.id, ...doc.data() } as Activity)) || [];
@@ -1073,10 +1032,12 @@ export default function App() {
     });
   }, [deletedActivitiesSnapshot]);
 
-  const deletedTechniciansQuery = user && isGeneralAdmin ? query(
-    collection(db, 'technicians'),
-    where('isDeleted', '==', true)
-  ) : null;
+  const deletedTechniciansQuery = React.useMemo(() => {
+    return user && isGeneralAdmin ? query(
+      collection(db, 'technicians'),
+      where('isDeleted', '==', true)
+    ) : null;
+  }, [user, isGeneralAdmin]);
   const [deletedTechniciansSnapshot] = useCollection(deletedTechniciansQuery);
   const deletedTechnicians = React.useMemo(() => {
     const items = deletedTechniciansSnapshot?.docs.map(doc => ({ id: doc.id, ...doc.data() } as Technician)) || [];
@@ -1245,6 +1206,25 @@ export default function App() {
   const handleAddTechnician = async (data: any) => {
     if (!user || !isManager) return;
     const { password, ...firestoreData } = data;
+
+    const regexSoloTexto = /^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]+$/;
+    if (!regexSoloTexto.test(firestoreData.specialty) || !regexSoloTexto.test(firestoreData.department)) {
+      throw new Error('Los campos de Especialidad y Departamento solo admiten caracteres alfabéticos.');
+    }
+    firestoreData.specialty = firestoreData.specialty.charAt(0).toUpperCase() + firestoreData.specialty.slice(1).toLowerCase();
+    firestoreData.department = firestoreData.department.toUpperCase();
+
+    let normalizedRole = 'tecnico';
+    if (firestoreData.role) {
+      const rl = firestoreData.role.toLowerCase().trim();
+      if (rl.includes('admin')) {
+        normalizedRole = 'admin';
+      } else if (rl.includes('super')) {
+        normalizedRole = 'supervisor';
+      }
+    }
+    firestoreData.role = normalizedRole;
+
     const trimmedEmail = data.email.toLowerCase().trim();
     
     try {
@@ -1258,43 +1238,69 @@ export default function App() {
       }
       const secondaryAuth = getSecondaryAuth(secondaryApp);
       
-      const authUser = await createUserWithEmailAndPassword(secondaryAuth, trimmedEmail, password);
+      let newUid = null;
+      try {
+        const authUser = await createUserWithEmailAndPassword(secondaryAuth, trimmedEmail, password);
+        newUid = authUser.user.uid;
+      } catch (authErr: any) {
+        if (authErr.code === 'auth/email-already-in-use') {
+          throw new Error('El correo electrónico ya está registrado en otra cuenta. Use otro correo o edite el técnico existente.');
+        }
+        throw authErr;
+      }
       await signSecondaryOut(secondaryAuth);
       
+      // Calculate next sequence ID
+      let maxSecuencial = 0;
+      if (techniciansSnapshot && !techniciansSnapshot.empty) {
+        techniciansSnapshot.docs.forEach(docSnap => {
+          const tData = docSnap.data();
+          if (tData && tData.idSecuencial) {
+            const num = Number(tData.idSecuencial);
+            if (!isNaN(num) && num > maxSecuencial) {
+              maxSecuencial = num;
+            }
+          }
+        });
+      }
+      const nextIdSecuencial = maxSecuencial + 1;
+
       // 2. Save the metadata to the technicians collection
       const docRef = await addDoc(collection(db, 'technicians'), {
         ...firestoreData,
+        idSecuencial: nextIdSecuencial,
         email: trimmedEmail,
-        uid: authUser.user.uid,
+        uid: newUid,
         createdAt: Timestamp.now(),
         isDeleted: false,
       });
 
-      // 3. Immediately pre-create the user profile document in the 'users' collection too
-      // so when they sign in, their name, role and department are set perfectly and immediately,
-      // without needing to wait or rely on other synchronization fallbacks.
-      const userProfileRef = doc(db, 'users', authUser.user.uid);
-      await setDoc(userProfileRef, {
-        uid: authUser.user.uid,
-        email: trimmedEmail,
-        displayName: data.name,
-        photoURL: data.photoURL || '',
-        role: data.role || 'tecnico',
-        department: data.department || 'Datos',
-        createdAt: Timestamp.now()
-      });
+      if (newUid) {
+        try {
+          await setDoc(doc(db, 'users', newUid), {
+            uid: newUid,
+            email: trimmedEmail,
+            displayName: data.name,
+            role: normalizedRole,
+            department: data.department || 'Datos',
+            createdAt: Timestamp.now(),
+          });
+        } catch (uErr) {
+          console.error("Failed to provision user profile during tech creation:", uErr);
+        }
+      }
 
       // Add Notification
       await addDoc(collection(db, 'notifications'), {
         userId: user.uid,
-        userName: userProfile?.displayName,
+        userName: userProfile?.displayName || user.displayName || 'Administrador',
         type: 'tech_add',
-        message: `Técnico registrado: ${data.name}`,
+        message: `Nuevo perfil registrado: ${data.name}`,
         relatedId: docRef.id,
         scope: 'departmental',
         targetRole: 'supervisor',
         department: data.department || 'Datos',
-        targetUserId: authUser.user.uid,
+        targetUserId: newUid,
         createdAt: Timestamp.now(),
         readBy: [user.uid]
       });
@@ -1302,23 +1308,68 @@ export default function App() {
       setIsTechFormOpen(false);
     } catch (err: any) {
       console.error("Error adding technician:", err);
-      alert("Error al registrar: " + (err.message || String(err)));
+      throw err;
     }
   };
 
   const [editingTechnician, setEditingTechnician] = React.useState<Technician | null>(null);
   const handleEditTechnician = async (data: any) => {
     if (!user || !isManager || !editingTechnician) return;
+    
+    if (editingTechnician.role === 'admin' && editingTechnician.uid !== user.uid && editingTechnician.email?.toLowerCase().trim() !== user.email?.toLowerCase().trim()) {
+      alert("Acceso denegado: Por políticas de seguridad, no está permitido modificar el perfil de otros administradores.");
+      return;
+    }
+
     const { password, ...firestoreData } = data;
+
+    const regexSoloTexto = /^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]+$/;
+    if (!regexSoloTexto.test(firestoreData.specialty) || !regexSoloTexto.test(firestoreData.department)) {
+      throw new Error('Los campos de Especialidad y Departamento solo admiten caracteres alfabéticos.');
+    }
+    firestoreData.specialty = firestoreData.specialty.charAt(0).toUpperCase() + firestoreData.specialty.slice(1).toLowerCase();
+    firestoreData.department = firestoreData.department.toUpperCase();
+
+    let normalizedRole = 'tecnico';
+    if (firestoreData.role) {
+      const rl = firestoreData.role.toLowerCase().trim();
+      if (rl.includes('admin')) {
+        normalizedRole = 'admin';
+      } else if (rl.includes('super')) {
+        normalizedRole = 'supervisor';
+      }
+    }
+    firestoreData.role = normalizedRole;
+
     const trimmedEmail = data.email.toLowerCase().trim();
     try {
+      // Check if they already have an idSecuencial
+      let existingIdSec = editingTechnician.idSecuencial;
+      if (!existingIdSec) {
+        // Calculate next sequence ID
+        let maxSecuencial = 0;
+        if (techniciansSnapshot && !techniciansSnapshot.empty) {
+          techniciansSnapshot.docs.forEach(docSnap => {
+            const tData = docSnap.data();
+            if (tData && tData.idSecuencial) {
+              const num = Number(tData.idSecuencial);
+              if (!isNaN(num) && num > maxSecuencial) {
+                maxSecuencial = num;
+              }
+            }
+          });
+        }
+        existingIdSec = maxSecuencial + 1;
+        firestoreData.idSecuencial = existingIdSec;
+      }
+
       await setDoc(doc(db, 'technicians', editingTechnician.id), {
         ...firestoreData,
         email: trimmedEmail,
         updatedAt: Timestamp.now(),
       }, { merge: true });
 
-      // Keep user profile in 'users' collection in sync with the updated technician info
+      // Sync 'users' collection with the updated technician info
       try {
         let targetUid = editingTechnician.uid;
         if (!targetUid && editingTechnician.email) {
@@ -1331,30 +1382,29 @@ export default function App() {
         }
         
         if (targetUid) {
-          const userProfileRef = doc(db, 'users', targetUid);
-          await setDoc(userProfileRef, {
+          await setDoc(doc(db, 'users', targetUid), {
             displayName: data.name,
-            role: data.role || 'tecnico',
+            role: normalizedRole,
             department: data.department || 'Datos',
-            email: trimmedEmail,
+            email: trimmedEmail
           }, { merge: true });
-          
-          // If the edited user is the currently logged in user, update local state as well
-          if (targetUid === user.uid) {
-            setUserProfile((prev) => prev ? {
-              ...prev,
-              displayName: data.name,
-              role: data.role || 'tecnico',
-              department: data.department || 'Datos',
-              email: trimmedEmail
-            } : null);
-          }
+        }
+        
+        // If the edited user is the currently logged in user, update local state so the header updates instantly
+        if (targetUid && targetUid === user.uid) {
+          setUserProfile((prev) => prev ? {
+            ...prev,
+            displayName: data.name,
+            role: normalizedRole as any,
+            department: data.department || 'Datos',
+            email: trimmedEmail
+          } : null);
         }
       } catch (syncErr) {
-        console.error("Failed to sync edited technician to users profile:", syncErr);
+        console.error("Failed to update user profile state:", syncErr);
       }
       
-      let notificationMsg = `Personal editado: ${firestoreData.name}`;
+      let notificationMsg = `Perfil actualizado: ${firestoreData.name}`;
       if (password) {
         try {
           // If a new password was provided, we auto-trigger a recovery email so they can transition or update safely
@@ -1386,17 +1436,26 @@ export default function App() {
       setEditingTechnician(null);
     } catch (err: any) {
       console.error("Error editing technician:", err);
-      alert("Error al editar personal: " + (err.message || String(err)));
+      throw err;
     }
   };
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
 
-    if (confirmDelete.type === 'technician' && !isGeneralAdmin) {
-      alert("Acceso denegado: Solo el Administrador General puede dar de baja a miembros del personal.");
-      setConfirmDelete(null);
-      return;
+    if (confirmDelete.type === 'technician') {
+      if (!isGeneralAdmin) {
+        alert("Acceso denegado: Solo el Administrador General puede dar de baja a miembros del personal.");
+        setConfirmDelete(null);
+        return;
+      }
+      
+      const techObs = technicians?.find(t => t.id === confirmDelete.id);
+      if (techObs && techObs.role === 'admin' && techObs.uid !== user?.uid && techObs.email?.toLowerCase().trim() !== user?.email?.toLowerCase().trim()) {
+        alert("Acceso denegado: Por políticas de seguridad, no está permitido suspender o eliminar el perfil de otros administradores.");
+        setConfirmDelete(null);
+        return;
+      }
     }
     
     // Check permissions for activities
@@ -1412,13 +1471,16 @@ export default function App() {
     
     try {
       const collectionName = confirmDelete.type === 'activity' ? 'activities' : 'technicians';
+      const toDelete = confirmDelete;
+      // Actualización Optimista: Cerramos el modal inmediatamente
+      setConfirmDelete(null);
       
-      if (confirmDelete.title === 'Eliminar permanentemente') {
+      if (toDelete.title === 'Eliminar permanentemente') {
         if (!isGeneralAdmin) {
           alert("Acceso denegado: Solo el Administrador General puede realizar eliminaciones permanentes.");
           return;
         }
-        await deleteDoc(doc(db, collectionName, confirmDelete.id));
+        await deleteDoc(doc(db, collectionName, toDelete.id));
         
         await addDoc(collection(db, 'notifications'), {
           userId: user?.uid,
@@ -1432,11 +1494,11 @@ export default function App() {
           readBy: [user?.uid].filter(Boolean)
         });
       } else {
-        await setDoc(doc(db, collectionName, confirmDelete.id), {
+        await setDoc(doc(db, collectionName, toDelete.id), {
           isDeleted: true,
           deletedAt: Timestamp.now(),
           deletedBy: userProfile?.displayName || user?.displayName || 'Aiken Navas',
-          ...(collectionName === 'activities' && !confirmDelete.title ? { title: 'Actividad' } : {})
+          ...(collectionName === 'activities' && !toDelete.title ? { title: 'Actividad' } : {})
         }, { merge: true });
 
         let msg = '';
@@ -1864,7 +1926,7 @@ export default function App() {
     }
   };
 
-  if (loading) {
+  if (loading || (user && isProfileLoading)) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50/50 backdrop-blur-sm p-4 text-center">
         <div className="relative mb-6">
@@ -1874,7 +1936,7 @@ export default function App() {
           </div>
         </div>
         <h2 className="text-xl font-display font-black text-slate-900 tracking-tight mb-2">CANTV DTX</h2>
-        <p className="text-xs text-slate-500 font-bold uppercase tracking-widest animate-pulse max-w-[200px]">Iniciando Módulo de Datos y Transmisión...</p>
+        <p className="text-xs text-slate-500 font-bold uppercase tracking-widest animate-pulse max-w-[200px]">Sincronizando perfil con CANTV...</p>
       </div>
     );
   }
@@ -1958,14 +2020,7 @@ export default function App() {
               const ficha = techObj?.employeeId || getFichaLocal(email, techObj);
               const displayName = techObj?.name || res.user.displayName || email.split('@')[0];
 
-              let customMsg = '';
-              if (loggedInUserRole === 'admin') {
-                customMsg = `INICIO DE SESIÓN: El Administrador General ${cantvEmail} ha ingresado al sistema.`;
-              } else if (loggedInUserRole === 'supervisor') {
-                customMsg = `INICIO DE SESIÓN: El Supervisor ${cantvEmail} ha ingresado al sistema.`;
-              } else {
-                customMsg = `INICIO DE SESIÓN: El Técnico ${displayName} (${ficha}) de tu departamento ha ingresado al sistema.`;
-              }
+              const customMsg = generarMensajeLogin(displayName, loggedInUserRole);
 
               addDoc(collection(db, 'notifications'), {
                 type: 'auth_login',
@@ -2071,6 +2126,27 @@ export default function App() {
     return titleMatch || descMatch;
   }) || [];
 
+  // Derived user profile data syncing strictly with technicians collection
+  const currentUserTech = technicians?.find(t => t.email && t.email.toLowerCase().trim() === user.email?.toLowerCase().trim());
+  const displayProfileInfo = {
+    rol: activeUserProfile?.role || 'tecnico',
+    nombres: currentUserTech?.name ? currentUserTech.name.split(' ').slice(0, 2).join(' ') : (profileForm.displayName || '').split(' ').slice(0, 2).join(' '),
+    apellidos: currentUserTech?.name ? currentUserTech.name.split(' ').slice(2).join(' ') : (profileForm.displayName || '').split(' ').slice(2).join(' '),
+    nombreCompleto: currentUserTech?.name || profileForm.displayName || 'Usuario',
+    correo: activeUserProfile?.email || user?.email || '',
+    carnet: currentUserTech?.employeeId || techProfileInfo?.employeeId || 'Sin registrar',
+    cedula: currentUserTech?.idCard || techProfileInfo?.idCard || 'Sin registrar',
+    especialidad: currentUserTech?.specialty || techProfileInfo?.specialty || 'Sin registrar',
+    departamento: currentUserTech?.department || techProfileInfo?.department || 'Sin registrar',
+    telefono: currentUserTech?.phoneNumber || currentUserTech?.phone || techProfileInfo?.phoneNumber || 'Sin registrar',
+    fechaNacimiento: currentUserTech?.fechaNacimiento || techProfileInfo?.fechaNacimiento || 'Sin registrar',
+    fechaIngreso: currentUserTech?.fechaIngreso || techProfileInfo?.fechaIngreso || 'Sin registrar',
+    direccion: currentUserTech?.direccion || techProfileInfo?.direccion || 'Sin registrar',
+    tallaBotas: currentUserTech?.tallaBotas || techProfileInfo?.tallaBotas || 'N/R',
+    tallaCamisa: currentUserTech?.tallaCamisa || techProfileInfo?.tallaCamisa || 'N/R',
+    tallaPantalon: currentUserTech?.tallaPantalon || techProfileInfo?.tallaPantalon || 'N/R'
+  };
+
   return (
     <Layout 
       activeTab={activeTab} 
@@ -2080,7 +2156,8 @@ export default function App() {
       notifications={notifications}
       onMarkAsRead={handleMarkAsRead}
     >
-      {activeTab === 'dashboard' && (
+      <Suspense fallback={<div className="p-12 text-center text-slate-500 font-bold uppercase tracking-widest flex flex-col items-center gap-4 justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-brand-blue" /><span>Cargando módulo de CANTV...</span></div>}>
+        {activeTab === 'dashboard' && (
         <Dashboard 
           activities={activities || []} 
           technicians={technicians || []}
@@ -2129,6 +2206,8 @@ export default function App() {
           onEditTechnician={isGeneralAdmin ? ((tech) => setEditingTechnician(tech)) : undefined}
           onDeleteTechnician={isGeneralAdmin ? ((id, title) => setConfirmDelete({ type: 'technician', id, title })) : undefined}
           isLoading={techniciansLoading}
+          currentUserId={user?.uid}
+          currentUserEmail={user?.email || undefined}
         />
       )}
 
@@ -2151,312 +2230,290 @@ export default function App() {
       )}
 
       {activeTab === 'settings' && (
-        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-6xl mx-auto pb-12">
-          {/* Header Card de Configuración */}
+        <div className="max-w-5xl mx-auto pb-8 animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
+          
+          {/* 1. ENCABEZADO "CONFIGURACIÓN PERSONALIZADA" TOTALMENTE DESACOPLADO */}
           <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 bg-white p-6 rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02),0_15px_35px_rgba(0,0,0,0.06)] border border-slate-200">
             <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full xl:w-auto">
-              <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-brand-blue to-blue-600 rounded-3xl flex items-center justify-center text-white shadow-lg shadow-brand-blue/15 shrink-0">
-                <Settings size={26} className="sm:size-7" />
+              <div className="w-12 h-12 sm:w-14 sm:h-14 bg-[#004a99] bg-gradient-to-br from-[#004a99] to-blue-600 rounded-3xl flex items-center justify-center text-white shadow-lg shadow-[#004a99]/15 shrink-0">
+                <Settings size={26} className="sm:size-7 animate-spin-hover" />
               </div>
               <div className="min-w-0">
-                <h2 className="text-lg sm:text-xl font-display font-black text-slate-900 tracking-tight uppercase truncate">Configuración Personalizada</h2>
+                <h2 className="text-lg sm:text-xl font-display font-black text-slate-900 tracking-tight uppercase truncate">
+                  CONFIGURACIÓN PERSONALIZADA
+                </h2>
                 <div className="flex flex-wrap items-center gap-2 mt-0.5">
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Gestión de identidad, seguridad y parámetros intranet</p>
-                  <div className="hidden sm:block w-1.5 h-1.5 rounded-full bg-slate-300" />
-                  <p className="text-[10px] text-slate-100/0 font-black uppercase tracking-widest flex items-center gap-1 text-slate-400">
-                    Central Maracay 4357
+                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">
+                    GESTIÓN DE IDENTIDAD, SEGURIDAD Y PARÁMETROS INTRANET
                   </p>
                 </div>
               </div>
             </div>
-
           </div>
 
-          {/* Grid Bento de Dos Columnas */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Columna Izquierda: Información de Perfil */}
-            <div className="space-y-8">
-              {/* Tarjeta 1: Editar Perfil de Usuario */}
-              <div className="bg-white border border-slate-200 rounded-3xl shadow-xl p-8 space-y-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-brand-blue/10 rounded-xl text-brand-blue">
-                    <UserCircle size={20} />
+          {/* 2. EL NUEVO DISEÑO DE MI PERFIL (Tarjeta independiente) */}
+          <form onSubmit={handleUpdateProfile} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-6">
+            <div className="flex flex-col sm:flex-row items-center gap-5 text-center sm:text-left w-full sm:w-auto">
+              {/* Profile photo with camera button */}
+              <div className="relative shrink-0 select-none">
+                {profileForm.photoURL ? (
+                  <img src={profileForm.photoURL} alt="Perfil" className="w-16 h-16 rounded-full border border-slate-200 object-cover shadow-sm bg-white" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-16 h-16 rounded-full border border-slate-200 bg-slate-200 flex items-center justify-center text-slate-400">
+                    <Camera className="w-6 h-6" />
                   </div>
-                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Editar Información Personal</h3>
+                )}
+                <label className="absolute bottom-0 right-0 p-1.5 bg-[#004a99] hover:bg-blue-700 text-white rounded-full shadow-md transition-colors cursor-pointer flex items-center justify-center border border-white">
+                  <Camera className="w-3.5 h-3.5" />
+                  <input 
+                    type="file" 
+                    className="hidden" 
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        if (file.size > 2 * 1024 * 1024) {
+                          alert('La imagen es muy grande. Máximo 2MB.');
+                          return;
+                        }
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          setProfileForm({ ...profileForm, photoURL: reader.result as string });
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+
+              {/* Profile metadata */}
+              <div className="min-w-0">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <h3 className="text-base font-black text-slate-800 uppercase tracking-tight truncate">
+                    {displayProfileInfo.nombreCompleto}
+                  </h3>
+                  <span className="inline-flex self-center sm:self-auto px-2 py-0.5 text-[9px] font-black tracking-wider uppercase rounded-full bg-brand-blue/10 text-[#004a99]">
+                    {displayProfileInfo.rol === 'admin' ? 'ADMINISTRADOR GENERAL' : displayProfileInfo.rol.toUpperCase()}
+                  </span>
                 </div>
+                <p className="text-xs text-slate-400 font-bold mt-0.5 break-all">
+                  {displayProfileInfo.correo}
+                </p>
+                <p className="text-[10px] text-slate-400 mt-2 font-bold tracking-wider uppercase">
+                  {displayProfileInfo.departamento} · CENTRAL MARACAY 4357
+                </p>
+              </div>
+            </div>
 
-                <form onSubmit={handleUpdateProfile} className="space-y-6">
-                  {/* Avatar Upload Preview */}
-                  <div className="flex items-center gap-6 p-6 bg-slate-50 rounded-[2rem] border border-slate-200/50 border-dashed">
-                    <div className="relative">
-                      <div className="w-20 h-20 bg-white rounded-3xl shadow-xl flex items-center justify-center text-slate-300 border-2 border-white overflow-hidden ring-4 ring-slate-100 ring-offset-2">
-                        {profileForm.photoURL ? (
-                          <img src={profileForm.photoURL} alt="Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                        ) : (
-                          <Camera size={32} className="text-slate-400" />
-                        )}
-                      </div>
-                      <label className="absolute -bottom-2 -right-2 w-8 h-8 bg-brand-blue text-white rounded-xl shadow-lg flex items-center justify-center border-2 border-white cursor-pointer hover:bg-slate-900 hover:scale-105 transition-all">
-                        <Camera size={14} />
-                        <input 
-                          type="file" 
-                          className="hidden" 
-                          accept="image/*"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              if (file.size > 2 * 1024 * 1024) {
-                                alert('La imagen es muy grande. Máximo 2MB.');
-                                return;
-                              }
-                              const reader = new FileReader();
-                              reader.onloadend = () => {
-                                setProfileForm({ ...profileForm, photoURL: reader.result as string });
-                              };
-                              reader.readAsDataURL(file);
-                            }
-                          }}
-                        />
-                      </label>
-                    </div>
-                    <div className="flex-1 space-y-1">
-                      <p className="text-sm font-black text-slate-800 uppercase tracking-tight">Foto de Perfil</p>
-                      <p className="text-[10px] text-slate-500 font-bold leading-tight">Cargue una foto corporativa o asigne una URL externa abajo.</p>
-                    </div>
-                  </div>
+            {/* Compact GUARDAR FOTO button */}
+            <div className="shrink-0 w-full sm:w-auto">
+              <button 
+                type="submit"
+                disabled={isUpdatingProfile}
+                className="w-full sm:w-auto px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 text-center shrink-0 animate-in fade-in"
+              >
+                {isUpdatingProfile ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" /> GUARDAR FOTO
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
 
-                  <div className="space-y-4">
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between ml-1">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nombre Completo</label>
-                      </div>
-                      <div className="relative">
-                        <input 
-                          type="text"
-                          value={profileForm.displayName}
-                          onChange={(e) => setProfileForm({...profileForm, displayName: e.target.value})}
-                          readOnly={activeUserProfile?.role === 'tecnico' || activeUserProfile?.role === 'supervisor'}
-                          disabled={activeUserProfile?.role === 'tecnico' || activeUserProfile?.role === 'supervisor'}
-                          className={cn(
-                            "w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-blue/25 focus:shadow-md transition-all placeholder:text-slate-400",
-                            (activeUserProfile?.role === 'tecnico' || activeUserProfile?.role === 'supervisor') && "opacity-75 cursor-not-allowed bg-slate-100 pl-10"
-                          )}
-                          placeholder="Edite su nombre..."
-                          required
-                        />
-                        {(activeUserProfile?.role === 'tecnico' || activeUserProfile?.role === 'supervisor') && (
-                          <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
+          {/* 3. DISEÑO PLANO DE DOS COLUMNAS (Ficha Profesional + Seguridad) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            
+            {/* COLUMNA IZQUIERDA: FICHA PROFESIONAL */}
+            <div className="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+              
+              {/* Encabezado Seccional */}
+              <div className="flex items-center justify-between mb-2 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="p-1.5 bg-blue-50 text-[#004a99] rounded-lg">
+                    <Award className="w-4 h-4" />
+                  </span>
+                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Ficha Profesional</span>
+                </div>
+                {isGeneralAdmin && (
                   <button 
-                    type="submit"
-                    disabled={isUpdatingProfile}
-                    className="w-full h-12 bg-slate-900 hover:bg-brand-blue text-white rounded-xl font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
+                    type="button"
+                    onClick={() => {
+                      const matchingTech = technicians.find(t => t.email && t.email.toLowerCase().trim() === user?.email?.toLowerCase().trim());
+                      if (matchingTech) {
+                        setEditingTechnician(matchingTech);
+                      } else {
+                        alert("No se encontró su perfil de personal para editar.");
+                      }
+                    }}
+                    className="px-3.5 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-[11px] font-bold uppercase tracking-wider rounded-lg shadow-sm transition-colors flex items-center gap-1.5 shrink-0"
                   >
-                    {isUpdatingProfile ? (
-                      <Loader2 size={18} className="animate-spin" />
-                    ) : (
-                      <>
-                        <Check size={18} />
-                        Guardar Cambios
-                      </>
-                    )}
+                    <Edit2 className="w-3.5 h-3.5 text-slate-500" />
+                    Actualizar Ficha
                   </button>
-                </form>
-              </div>
-            </div>
-
-            {/* Columna Derecha: Ficha Profesional Laboral y Seguridad de la Cuenta */}
-            <div className="space-y-8">
-              {/* Tarjeta 3: Ficha Profesional CANTV (Solo Lectura con candados) */}
-              <div className="bg-white border border-slate-200 rounded-3xl shadow-xl p-8 space-y-6 relative overflow-hidden">
-                <div className="absolute top-0 right-0 h-40 w-40 bg-gradient-to-br from-brand-blue/5 to-transparent rounded-full -mr-10 -mt-10 pointer-events-none" />
-                <div className="flex items-center justify-between relative z-10">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-brand-blue/10 rounded-xl text-brand-blue">
-                      <Award size={20} />
-                    </div>
-                    <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Ficha Profesional CANTV</h3>
-                  </div>
-                  <span className="text-[9px] font-black text-brand-blue tracking-wider uppercase px-2 py-0.5 rounded bg-brand-blue/10">SOLO LECTURA</span>
-                </div>
-
-                <div className="p-5 bg-blue-50/50 border border-blue-100/50 rounded-2xl flex gap-4 items-center">
-                  <div className="w-12 h-12 bg-white rounded-2xl border border-blue-200/40 shadow-sm flex items-center justify-center shrink-0">
-                    <Shield size={24} className="text-brand-blue" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-black text-slate-800 uppercase tracking-tight">Identificación Institucional</p>
-                    <p className="text-[10px] text-slate-500 font-bold leading-tight">Detalles de personal inalterables para resguardo de auditorías corporativas.</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                      <Briefcase size={10} /> Código de Empleado (Ficha)
-                    </label>
-                    <div className="w-full h-11 bg-slate-100 border border-slate-200/50 rounded-xl px-4 flex items-center text-xs font-bold text-slate-500 cursor-not-allowed justify-between">
-                      {techProfileInfo?.employeeId || 'Cargando...'}
-                      <Lock size={12} className="text-slate-400 shrink-0" />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                      <UserCircle size={10} /> Cédula de Identidad (C.I.)
-                    </label>
-                    <div className="w-full h-11 bg-slate-100 border border-slate-200/50 rounded-xl px-4 flex items-center text-xs font-bold text-slate-550 dynamic text-slate-500 cursor-not-allowed justify-between">
-                      {techProfileInfo?.idCard || 'Cargando...'}
-                      <Lock size={12} className="text-slate-400 shrink-0" />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                      <Award size={10} /> Especialidad Primaria
-                    </label>
-                    <div className="w-full h-11 bg-slate-100 border border-slate-200/50 rounded-xl px-4 flex items-center text-xs font-bold text-slate-500 cursor-not-allowed justify-between">
-                      {techProfileInfo?.specialty || 'Cargando...'}
-                      <Lock size={12} className="text-slate-400 shrink-0" />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                      <Shield size={10} /> Departamento
-                    </label>
-                    <div className="w-full h-11 bg-slate-100 border border-slate-200/50 rounded-xl px-4 flex items-center text-xs font-bold text-slate-500 cursor-not-allowed justify-between">
-                      {techProfileInfo?.department || 'Datos y Transmisión'}
-                      <Lock size={12} className="text-slate-400 shrink-0" />
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
 
-              {/* Tarjeta 4: Seguridad de la Cuenta (Cambio de contraseña) */}
-              {!isGeneralAdmin ? (
-                <div className="bg-slate-50 border border-slate-100 p-6 rounded-2xl flex flex-col gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-brand-blue/10 rounded-xl text-brand-blue">
-                      <Shield size={20} />
-                    </div>
-                    <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">POLÍTICA DE SEGURIDAD DE CREDENCIALES</h3>
+              {/* GRID DE INPUTS CON LOS 11 CAMPOS COMPLETOS Y TÍTULOS UNIFICADOS */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+                
+                {/* Nombres */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Nombres</label>
+                  <div className="relative">
+                    <input type="text" value={displayProfileInfo.nombres} readOnly className="w-full pl-3 pr-10 py-2.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none cursor-not-allowed select-none font-bold" />
+                    <Lock className="w-4 h-4 text-slate-400 absolute inset-y-0 right-3 my-auto" />
                   </div>
-                  <p className="text-[13px] font-medium text-slate-600 leading-relaxed">
-                    De conformidad con las normas de seguridad de la información de la Gerencia de Datos y Transmisión, la administración de credenciales de acceso se encuentra centralizada de forma exclusiva. Para cualquier modificación, actualización o restablecimiento de su contraseña de usuario, deberá canalizar la solicitud formalmente ante el Administrador General de la plataforma.
-                  </p>
                 </div>
-              ) : (
-                <div className="bg-white border border-slate-200 rounded-3xl shadow-xl p-8 space-y-6">
-                  <div className="flex justify-between items-center gap-4 flex-wrap">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-brand-blue/10 rounded-xl text-brand-blue">
-                        <Lock size={20} />
-                      </div>
-                      <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Seguridad de la Cuenta</h3>
-                    </div>
+
+                {/* Apellidos */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Apellidos</label>
+                  <div className="relative">
+                    <input type="text" value={displayProfileInfo.apellidos} readOnly className="w-full pl-3 pr-10 py-2.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none cursor-not-allowed select-none font-bold" />
+                    <Lock className="w-4 h-4 text-slate-400 absolute inset-y-0 right-3 my-auto" />
                   </div>
-
-                  <form onSubmit={handleUpdatePassword} className="space-y-4">
-                    {passwordSuccess && (
-                      <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 text-emerald-800 space-y-1.5 animate-in fade-in duration-300">
-                        <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider">
-                          <Check size={14} className="text-emerald-600" />
-                          Operación Exitosa
-                        </div>
-                        <p className="text-[11px] font-medium leading-relaxed text-emerald-700">
-                          {passwordSuccess}
-                        </p>
-                      </div>
-                    )}
-
-                    {passwordError && (
-                      <div className="p-4 bg-rose-50 rounded-2xl border border-rose-200 text-rose-800 space-y-1.5 animate-in fade-in duration-300">
-                        <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider">
-                          <X size={14} className="text-rose-600" />
-                          Error de Validación
-                        </div>
-                        <p className="text-[11px] font-medium leading-relaxed text-rose-700">
-                          {passwordError}
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Contraseña Actual</label>
-                      <input 
-                        type="password"
-                        value={passwordForm.currentPassword}
-                        onChange={(e) => {
-                          setPasswordError(null);
-                          setPasswordSuccess(null);
-                          setPasswordForm({...passwordForm, currentPassword: e.target.value});
-                        }}
-                        className="w-full h-11 border rounded-xl px-4 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-blue/25 transition-all bg-slate-50 border-slate-200 hover:border-slate-300"
-                        placeholder="Contraseña actual"
-                        required
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nueva Contraseña</label>
-                        <input 
-                          type="password"
-                          value={passwordForm.newPassword}
-                          onChange={(e) => {
-                            setPasswordError(null);
-                            setPasswordSuccess(null);
-                            setPasswordForm({...passwordForm, newPassword: e.target.value});
-                          }}
-                          className="w-full h-11 border rounded-xl px-4 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-blue/25 transition-all bg-slate-50 border-slate-200 hover:border-slate-300"
-                          placeholder="Mínimo 6 caracteres"
-                          required
-                          minLength={6}
-                        />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Confirmar Contraseña</label>
-                        <input 
-                          type="password"
-                          value={passwordForm.confirmPassword}
-                          onChange={(e) => {
-                            setPasswordError(null);
-                            setPasswordSuccess(null);
-                            setPasswordForm({...passwordForm, confirmPassword: e.target.value});
-                          }}
-                          className="w-full h-11 border rounded-xl px-4 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-blue/25 transition-all bg-slate-50 border-slate-200 hover:border-slate-300"
-                          placeholder="Re-ingrese contraseña"
-                          required
-                          minLength={6}
-                        />
-                      </div>
-                    </div>
-
-                    <button 
-                      type="submit"
-                      disabled={isUpdatingPassword || !(passwordForm.currentPassword && passwordForm.newPassword && passwordForm.confirmPassword)}
-                      className="w-full h-11 font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all text-xs rounded-xl bg-slate-900 hover:bg-brand-blue text-white shadow-md hover:shadow-lg hover:shadow-brand-blue/15 cursor-pointer disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
-                    >
-                      {isUpdatingPassword ? (
-                        <Loader2 size={16} className="animate-spin" />
-                      ) : (
-                        <>
-                          <ShieldCheck size={16} />
-                          Actualizar Credenciales
-                        </>
-                      )}
-                    </button>
-                  </form>
                 </div>
-              )}
+
+                {/* Carnet */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Carnet</label>
+                  <div className="relative">
+                    <input type="text" value={displayProfileInfo.carnet} readOnly className="w-full pl-3 pr-10 py-2.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none cursor-not-allowed select-none font-bold" />
+                    <Lock className="w-4 h-4 text-slate-400 absolute inset-y-0 right-3 my-auto" />
+                  </div>
+                </div>
+
+                {/* Cédula */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cédula</label>
+                  <div className="relative">
+                    <input type="text" value={displayProfileInfo.cedula} readOnly className="w-full pl-3 pr-10 py-2.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none cursor-not-allowed select-none font-bold" />
+                    <Lock className="w-4 h-4 text-slate-400 absolute inset-y-0 right-3 my-auto" />
+                  </div>
+                </div>
+
+                {/* Teléfono */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Teléfono</label>
+                  <div className="relative">
+                    <input type="text" value={displayProfileInfo.telefono} readOnly className="w-full pl-3 pr-10 py-2.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none cursor-not-allowed select-none font-bold" />
+                    <Lock className="w-4 h-4 text-slate-400 absolute inset-y-0 right-3 my-auto" />
+                  </div>
+                </div>
+
+                {/* Cargo */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cargo</label>
+                  <div className="relative">
+                    <input type="text" value={displayProfileInfo.especialidad} readOnly className="w-full pl-3 pr-10 py-2.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none cursor-not-allowed select-none font-bold" />
+                    <Lock className="w-4 h-4 text-slate-400 absolute inset-y-0 right-3 my-auto" />
+                  </div>
+                </div>
+
+                {/* Departamento */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Departamento</label>
+                  <div className="relative">
+                    <input type="text" value={displayProfileInfo.departamento} readOnly className="w-full pl-3 pr-10 py-2.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none cursor-not-allowed select-none font-bold" />
+                    <Lock className="w-4 h-4 text-slate-400 absolute inset-y-0 right-3 my-auto" />
+                  </div>
+                </div>
+
+                {/* Fecha de Nacimiento */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Fecha de Nacimiento</label>
+                  <div className="relative">
+                    <input type="text" value={displayProfileInfo.fechaNacimiento} readOnly className="w-full pl-3 pr-10 py-2.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none cursor-not-allowed select-none font-bold" />
+                    <Lock className="w-4 h-4 text-slate-400 absolute inset-y-0 right-3 my-auto" />
+                  </div>
+                </div>
+
+                {/* Fecha de Ingreso */}
+                <div className="flex flex-col gap-1 sm:col-span-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Fecha de Ingreso</label>
+                  <div className="relative">
+                    <input type="text" value={displayProfileInfo.fechaIngreso} readOnly className="w-full pl-3 pr-10 py-2.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none cursor-not-allowed select-none font-bold" />
+                    <Lock className="w-4 h-4 text-slate-400 absolute inset-y-0 right-3 my-auto" />
+                  </div>
+                </div>
+
+                {/* Tallas de Uniforme */}
+                <div className="grid grid-cols-3 gap-3 sm:col-span-2 pt-2 border-t border-slate-100">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Talla Botas</label>
+                    <input type="text" value={displayProfileInfo.tallaBotas} readOnly className="w-full px-3 py-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none cursor-not-allowed font-bold" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Talla Camisa</label>
+                    <input type="text" value={displayProfileInfo.tallaCamisa} readOnly className="w-full px-3 py-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none cursor-not-allowed font-bold" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Talla Pantalón</label>
+                    <input type="text" value={displayProfileInfo.tallaPantalon} readOnly className="w-full px-3 py-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none cursor-not-allowed font-bold" />
+                  </div>
+                </div>
+
+                {/* Dirección */}
+                <div className="flex flex-col gap-1 sm:col-span-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Dirección de Habitación</label>
+                  <textarea value={displayProfileInfo.direccion} readOnly rows={2} className="w-full px-3 py-2.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none resize-none leading-relaxed cursor-not-allowed select-none font-bold" />
+                </div>
+
+              </div>
+
             </div>
+
+            {/* COLUMNA DERECHA CONDICIONAL */}
+            {isGeneralAdmin ? (
+              /* A. CASO ADMINISTRADOR: Renders únicamente la ZONA DE PELIGRO */
+              <div className="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col gap-4">
+                <div className="flex items-center gap-2.5 border-b border-red-100 pb-3 text-red-600">
+                  <span className="p-1.5 bg-red-50 text-red-600 rounded-lg">
+                    <ShieldCheck className="w-4 h-4" />
+                  </span>
+                  <span className="text-xs font-bold uppercase tracking-wider">Zona de Peligro</span>
+                </div>
+                
+                <p className="text-xs text-slate-500 leading-relaxed text-left">
+                  Atención: La remoción de su credencial de acceso es una acción de carácter irrevocable. Al proceder, se revocarán de forma definitiva todos sus privilegios de administración global, se clausurará su perfil de seguridad y el evento será reportado de forma obligatoria en la bitácora de auditoría de la Gerencia de Tecnología.
+                </p>
+
+                <button 
+                  type="button"
+                  onClick={handleVerifyDeleteSelf}
+                  className="w-full mt-2 py-2.5 border border-red-200 hover:bg-red-50 text-red-600 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  <Trash2 className="w-4 h-4 text-red-500" />
+                  Eliminar Mi Cuenta
+                </button>
+              </div>
+            ) : (
+              /* B. CASO TÉCNICO / SUPERVISOR: Renders el boletín estático de SEGURIDAD */
+              <div className="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col gap-4">
+                <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3 text-brand-blue">
+                  <span className="p-1.5 bg-blue-50 text-[#004a99] rounded-lg">
+                    <Lock className="w-4 h-4" />
+                  </span>
+                  <span className="text-xs font-bold uppercase tracking-wider">Seguridad de la Cuenta</span>
+                </div>
+                
+                <p className="text-[11px] font-medium text-slate-600 leading-relaxed font-sans">
+                  De conformidad con las normas de seguridad de la información del Departamento de Datos y Transmisión, la administración de credenciales de acceso se encuentra centralizada de forma exclusiva. Para cualquier modificación, actualización o restablecimiento de su contraseña, deberá canalizar la solicitud formalmente ante el Administrador General de la sucursal.
+                </p>
+
+                <div className="border-t border-blue-100/40 pt-2.5 mt-1 flex justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider animate-pulse font-mono">
+                  <span>ING. ALBERTO CONTRERAS</span>
+                  <span className="text-[#004a99]">EXT: 4357</span>
+                </div>
+              </div>
+            )}
+
           </div>
+
         </div>
       )}
 
@@ -2525,6 +2582,76 @@ export default function App() {
           technicians={technicians}
         />
       )}
+
+      {/* MODAL DE CONFIRMACIÓN DE DOBLE FACTOR POR RE-AUTENTICACIÓN */}
+      {isDeleteConfirmOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-[150] animate-in fade-in duration-200">
+          <form 
+            onSubmit={handleEjecutarBorradoSeguro}
+            className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl max-w-md w-full text-center flex flex-col items-center animate-in zoom-in-95 duration-200"
+          >
+            {/* Icono de advertencia en rojo */}
+            <span className="p-4 bg-red-50 text-red-600 rounded-full mb-4 border border-red-100 shadow-sm animate-pulse">
+              <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </span>
+
+            <h3 className="text-base font-bold text-slate-800 uppercase tracking-tight">
+              ¿Confirmar Eliminación de Cuenta?
+            </h3>
+            
+            <p className="text-xs text-slate-500 leading-relaxed mt-2 font-medium">
+              <strong>{activeUserProfile?.displayName || user?.displayName || 'Administrador General'}</strong>, estás a punto de eliminar de forma permanente tu cuenta de Administrador General. Esta acción revocaría todos tus accesos de forma irreversible y definitiva.
+            </p>
+
+            {/* Entrada de Contraseña de Seguridad */}
+            <div className="w-full mt-5 text-left flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider text-center block">
+                Ingresa tu contraseña para confirmar
+              </label>
+              <input 
+                type="password" 
+                value={contrasenaConfirmacion}
+                onChange={(e) => setContrasenaConfirmacion(e.target.value)}
+                placeholder="Contraseña de acceso"
+                disabled={isDeleting}
+                required
+                className="w-full px-3 py-2 text-center text-sm border border-slate-200 rounded-lg bg-slate-50 focus:outline-[#004a99] uppercase tracking-widest font-mono text-slate-800"
+              />
+              {/* Mensaje de error de validación en tiempo real */}
+              {errorBorrado && (
+                <span className="text-[10px] text-red-600 font-bold text-center mt-1 block">
+                  {errorBorrado}
+                </span>
+              )}
+            </div>
+
+            {/* Botones de acción del modal */}
+            <div className="grid grid-cols-2 gap-3 w-full mt-6">
+              <button 
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setIsDeleteConfirmOpen(false)}
+                className="px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button 
+                type="submit"
+                disabled={isDeleting || contrasenaConfirmacion.length < 6} 
+                className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white rounded-lg shadow-sm transition-all flex items-center justify-center gap-1.5
+                  ${(contrasenaConfirmacion.length >= 6 && !isDeleting)
+                    ? 'bg-red-600 hover:bg-red-700 cursor-pointer' 
+                    : 'bg-red-200 cursor-not-allowed opacity-60'}`}
+              >
+                {isDeleting ? 'Eliminando...' : 'Eliminar Cuenta'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      </Suspense>
     </Layout>
   );
 }

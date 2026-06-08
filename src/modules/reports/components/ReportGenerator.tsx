@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, FileText, Table, Users, Filter, Calendar, ChevronRight, Archive, History, X, Clock, MapPin, Wrench, Zap, TrendingDown, AlertOctagon, Eye } from 'lucide-react';
+import { Download, FileText, Table, Users, Filter, Calendar, ChevronRight, Archive, History, X, Clock, MapPin, Zap, TrendingDown, AlertOctagon, Eye } from 'lucide-react';
 import { Activity, Technician } from '../../../types';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
@@ -8,17 +8,81 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, getYear, getMonth, startOfWeek, endOfWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { cn, formatDateSpanish, capitalizeSentence, getActivityBounds, calculateRealHours, parseTime } from '../../../lib/utils';
+import { cn, formatDateSpanish, getActivityBounds, calculateRealHours, parseTime, calculateMetrics, calculateExcesoPersonas, capitalizeSentence, optimizarAlturasJustificacionSGA } from '../../../lib/utils';
 import { formatHours } from '../../activities/components/ActivityForm';
+import LottAlertsModal from '../../activities/components/LottAlertsModal';
+import { obtenerNombreArchivoExcel } from '../../../lib/filenameUtils';
+
+function ReportDailyExcessRow({ d }: { d: any }) {
+  const [expanded, setExpanded] = React.useState(false);
+  const titlesText = d.titles.map((t: string) => capitalizeSentence(!t || t.trim().toLowerCase() === 's' ? 'Mantenimiento Preventivo de Enlace' : t)).join(', ');
+  const isLong = titlesText.length > 35;
+
+  return (
+    <div className="flex justify-between items-center pl-3 py-1.5 border-l-2 border-brand-red/40 ml-1 gap-4 text-left">
+      <div className="flex-1 min-w-0 flex flex-col gap-1">
+        <div className="text-[10px] font-bold text-slate-600 flex items-center gap-1.5 uppercase tracking-widest">
+          <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded flex items-center gap-1 leading-none shrink-0 font-bold">
+            📅 {formatDateSpanish(d.date, 'dd MMM').toUpperCase()}
+          </span>
+        </div>
+        <div className="text-[10px] font-medium leading-normal">
+          <p className={expanded ? "whitespace-normal text-slate-600 font-semibold" : "line-clamp-1 text-slate-500 italic"}>
+            {titlesText}
+            {isLong && (
+              <button
+                type="button"
+                onClick={() => setExpanded(!expanded)}
+                className="text-[10px] text-brand-blue font-bold hover:underline inline ml-1 cursor-pointer transition-all active:scale-95 whitespace-nowrap focus:outline-none"
+              >
+                {expanded ? " ver menos" : " ver más..."}
+              </button>
+            )}
+          </p>
+        </div>
+      </div>
+      <div className="text-[10px] font-black font-mono text-brand-red border border-brand-red/15 bg-brand-red/5 px-2 py-1 rounded-lg whitespace-nowrap shadow-sm self-start mt-0.5">
+        EXCESO DIARIO: {formatHours(d.total).toUpperCase()}
+      </div>
+    </div>
+  );
+}
 
 interface ReportGeneratorProps {
   activities: Activity[];
   technicians: Technician[];
 }
 
+export function DescripcionExpandible({ texto, limite = 90 }: { texto: string; limite?: number }) {
+  const [expandido, setExpandido] = React.useState(false);
+
+  if (!texto || texto.length <= limite) {
+    return <p className="text-xs text-slate-500 leading-relaxed mb-4">{texto}</p>;
+  }
+
+  const textoTruncado = `${texto.slice(0, limite)}...`;
+
+  return (
+    <p className="text-xs text-slate-500 leading-relaxed transition-all duration-200 mb-4 inline-block">
+      {expandido ? texto : textoTruncado}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation(); // Evita disparar clics accidentales en la tarjeta
+          setExpandido(!expandido);
+        }}
+        className="text-blue-600 font-semibold italic hover:underline ml-1 focus:outline-none inline-block line-clamp-none whitespace-nowrap"
+      >
+        {expandido ? 'ver menos' : 'ver más...'}
+      </button>
+    </p>
+  );
+}
+
 export default function ReportGenerator({ activities, technicians }: ReportGeneratorProps) {
   const [selectedYear, setSelectedYear] = React.useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = React.useState(new Date().getMonth());
+  const [selectedTechnician, setSelectedTechnician] = React.useState<string>('todos');
   const [viewMode, setViewMode] = React.useState<'summary' | 'history'>('summary');
   const [monthlySummaryDetails, setMonthlySummaryDetails] = React.useState<'total' | 'st' | 'df' | 'exceso' | null>(null);
   
@@ -50,73 +114,29 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
     return activities.filter(a => {
       if (!a || !a.date) return false;
       const date = safeGetActivityDate(a);
-      return date.getFullYear() === selectedYear && date.getMonth() === selectedMonth;
+      const isSameMonthYear = date.getFullYear() === selectedYear && date.getMonth() === selectedMonth;
+      if (!isSameMonthYear) return false;
+
+      const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
+      const matchesTechnician = selectedTechnician === 'todos' || 
+        parts.some(p => (p || '').toLowerCase().trim() === selectedTechnician.toLowerCase().trim());
+        
+      return matchesTechnician;
     });
-  }, [activities, selectedYear, selectedMonth]);
+  }, [activities, selectedYear, selectedMonth, selectedTechnician]);
 
-  const totalHours = React.useMemo(() => {
-    return filteredActivities.reduce((acc, a) => acc + (a.totalHours || (a.overtimeHours || 0) + 8), 0);
-  }, [filteredActivities]);
-
-  const stHours = React.useMemo(() => {
-    return filteredActivities.reduce((acc, a) => {
-      const r_st = (a.overtimeHours || 0);
-      return acc + (r_st > 0 ? r_st : 0);
-    }, 0);
-  }, [filteredActivities]);
-
-  const dfHours = React.useMemo(() => {
-    return Math.abs(filteredActivities.reduce((acc, a) => {
-      const r_st = (a.overtimeHours || 0);
-      return acc + (r_st < 0 ? r_st : 0);
-    }, 0));
-  }, [filteredActivities]);
+  const { totalHours, stHours, dfHours } = React.useMemo(() => {
+    const metrics = calculateMetrics(filteredActivities, selectedTechnician);
+    return { totalHours: metrics.total, stHours: metrics.stAcumulado, dfHours: metrics.dfAcumulado };
+  }, [filteredActivities, selectedTechnician]);
 
   const excesoPersonasMensual = React.useMemo(() => {
-    const dailyHoursForTech: Record<string, { minStart: number, maxEnd: number, hasPause: boolean }> = {};
-    
-    filteredActivities.forEach(a => {
-      const dateKey = safeGetActivityDate(a).toISOString().split('T')[0];
-      const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
-      
-      const { minStart, maxEnd } = getActivityBounds(a);
-
-      parts.forEach(p => {
-        const key = `${dateKey}_${p}`;
-        if (!dailyHoursForTech[key]) {
-          dailyHoursForTech[key] = { minStart: Infinity, maxEnd: -Infinity, hasPause: false };
-        }
-        
-        if (a.hasPause === 'SI') {
-          dailyHoursForTech[key].hasPause = true;
-        }
-
-        if (minStart !== Infinity) {
-          dailyHoursForTech[key].minStart = Math.min(dailyHoursForTech[key].minStart, minStart);
-        }
-        if (maxEnd !== -Infinity) {
-          dailyHoursForTech[key].maxEnd = Math.max(dailyHoursForTech[key].maxEnd, maxEnd);
-        }
-      });
-    });
-
-    let count = 0;
-    Object.values(dailyHoursForTech).forEach(dayData => {
-       if (dayData.minStart !== Infinity && dayData.maxEnd !== -Infinity) {
-          let totalRealHours = dayData.maxEnd - dayData.minStart;
-          if (totalRealHours < 0) totalRealHours = 0;
-          if (dayData.hasPause) {
-             totalRealHours -= 1;
-             if (totalRealHours < 0) totalRealHours = 0;
-          }
-          if (totalRealHours > 10.0) {
-             count++;
-          }
-       }
-    });
-
-    return count;
-  }, [filteredActivities]);
+    const rawExceso = calculateExcesoPersonas(filteredActivities, true);
+    if (selectedTechnician !== 'todos') {
+      return rawExceso.items.filter(item => (item.name || '').toLowerCase() === selectedTechnician.toLowerCase()).length;
+    }
+    return rawExceso.count;
+  }, [filteredActivities, selectedTechnician]);
 
   const activitiesByDay = React.useMemo(() => {
     const map = new Map<number, Activity[]>();
@@ -236,20 +256,17 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
       });
 
       cols.push(
-        { header: 'DOCUMENTACION', key: 'doc', width: 15 },
-        { header: 'SOBRETIEMPO', key: 'st', width: 15 },
+        { header: 'SOBRETIEMPO', key: 'st', width: 16 },
         { header: 'DEFICIT', key: 'deficit', width: 15 },
         { header: 'Hora Entrada Mañana', key: 'he_m', width: 22 },
         { header: 'Hora Salida Mañana', key: 'hs_m', width: 22 },
         { header: 'Pausa', key: 'pausa', width: 10 },
         { header: 'Hora Entrada Tarde', key: 'he_t', width: 22 },
         { header: 'Hora Salida Tarde', key: 'hs_t', width: 22 },
-        { header: 'JUSTIFIQUE', key: 'justifique', width: 45 },
         { header: 'HORAS', key: 'horas', width: 10 },
         { header: 'MANEJO', key: 'manejo', width: 15 },
         { header: 'VIATICOS', key: 'viaticos', width: 12 },
-        { header: 'MONTO VIATICOS (Bs.)', key: 'monto_viaticos', width: 22 },
-        { header: 'DEPARTAMENTO', key: 'dpto', width: 15 }
+        { header: 'MONTO VIATICOS (Bs.)', key: 'monto_viaticos', width: 22 }
       );
 
       sheet.columns = cols;
@@ -267,6 +284,7 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
 
       const styleHeader = (rowNum: number) => {
         const row = sheet.getRow(rowNum);
+        row.height = 24;
         row.eachCell((cell) => {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00B0F0' } };
           cell.font = { bold: true, size: 9, name: 'Arial', color: { argb: 'FF000000' } };
@@ -300,7 +318,6 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
           fecha: fechaValue,
           flota: a.fleet || '',
           incidente: a.incidentNumber ? ` ${a.incidentNumber} - ${a.title}` : a.title,
-          doc: '',
           st: a.overtimeHours && a.overtimeHours > 0 ? `${formatHours(a.overtimeHours)}` : 'no',
           deficit: typeof a.overtimeHours === 'number' && a.overtimeHours < 0 ? `${formatHours(a.overtimeHours)}` : 'no',
           he_m: formatTime24h(a.startTimeMorning || '', '07:30'),
@@ -308,12 +325,10 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
           pausa: a.hasPause || 'SI',
           he_t: formatTime24h(a.startTimeAfternoon || '', '12:45'),
           hs_t: formatTime24h(a.endTimeAfternoon || a.endTime || '', '16:00'),
-          justifique: a.justification || ((a.overtimeHours || 0) === 0 ? '' : 'No justificado.'),
           horas: a.totalHours ? `${formatHours(a.totalHours)}` : '',
           manejo: a.driver || '',
           viaticos: a.hasPerDiem ? 'si' : 'no',
-          monto_viaticos: a.hasPerDiem ? Number(a.perDiemAmount || 0).toFixed(2) : '0.00',
-          dpto: ''
+          monto_viaticos: a.hasPerDiem ? Number(a.perDiemAmount || 0).toFixed(2) : '0.00'
         };
 
         const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
@@ -342,6 +357,8 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
             cell.font = { size: 9, name: 'Arial', bold: true };
           }
         });
+
+        row.height = 18;
       });
 
       sheet.columns.forEach(column => {
@@ -355,8 +372,40 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
         column.width = maxLength < 12 ? 12 : maxLength + 4;
       });
 
+      // 1. Obtener la Fila 2 (donde se encuentran físicamente los títulos de las columnas)
+      const filaCabecera = sheet.getRow(2);
+      let indiceColumnaSobretiempo = -1;
+
+      // 2. Escanear celda por celda de la fila para encontrar la columna correcta
+      filaCabecera.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        const valorCelda = cell.value ? cell.value.toString().trim().toUpperCase() : '';
+        if (valorCelda === 'SOBRETIEMPO') {
+          indiceColumnaSobretiempo = colNumber;
+        }
+      });
+
+      // 3. Si se localiza la columna, forzar el ancho de seguridad y alineación
+      if (indiceColumnaSobretiempo !== -1) {
+        const columna = sheet.getColumn(indiceColumnaSobretiempo);
+        // Establecemos un ancho de 20 para dar espacio de respiración en el margen derecho (R)
+        columna.width = 20;
+        columna.alignment = {
+          vertical: 'middle',
+          horizontal: 'center',
+          wrapText: true
+        };
+      }
+
       const buffer = await workbook.xlsx.writeBuffer();
-      const fileName = `PLANIFICACION_${months[selectedMonth].toUpperCase()}_${selectedYear}_TX_DX.xlsx`;
+      
+      const fechaFiltro = new Date(selectedYear, selectedMonth, 1);
+      const fileName = obtenerNombreArchivoExcel({
+        tipoDoc: 'Planificacion',
+        frecuencia: 'mensual',
+        fechaFiltro: fechaFiltro,
+        tecnicoSeleccionado: selectedTechnician
+      });
+      
       saveAs(new Blob([buffer]), fileName);
 
     } catch (err: any) {
@@ -390,9 +439,18 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
     docPdf.setFont('helvetica', 'bold');
     docPdf.text('CANTV', 14, 20);
     
-    docPdf.setFontSize(10);
-    docPdf.text('Gerencia de Datos y Transmisión · Central 4357', 14, 28);
-    docPdf.text(`REPORTE MENSUAL: ${months[selectedMonth].toUpperCase()} ${selectedYear}`, pageWidth - 14, 28, { align: 'right' });
+    docPdf.setFont('helvetica', 'normal');
+    docPdf.setFontSize(8.5);
+    docPdf.setTextColor(176, 196, 222); // #b0c4de
+    docPdf.text('Departamento de Datos y Transmisión · Central 4357', 14, 28);
+
+    const headerTitle = selectedTechnician !== 'todos' 
+      ? `REPORTE MENSUAL INDIVIDUAL: ${selectedTechnician.toUpperCase()} - ${months[selectedMonth].toUpperCase()} ${selectedYear}`
+      : `REPORTE MENSUAL: ${months[selectedMonth].toUpperCase()} ${selectedYear}`;
+    
+    docPdf.setFont('helvetica', 'bold');
+    docPdf.setTextColor(255, 255, 255); // #ffffff
+    docPdf.text(headerTitle, pageWidth - 14, 28, { align: 'right' });
     
     docPdf.setFontSize(12);
     docPdf.setTextColor(255, 255, 255);
@@ -402,9 +460,7 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
     docPdf.setTextColor(40, 40, 40);
     docPdf.setFontSize(11);
     docPdf.text(`Total de Incidencias: ${filteredActivities.length}`, 14, 50);
-    const totalOT = filteredActivities.reduce((acc, a) => acc + ((a.overtimeHours || 0) > 0 ? a.overtimeHours! : 0), 0);
-    const totalDF = filteredActivities.reduce((acc, a) => acc + ((a.overtimeHours || 0) < 0 ? a.overtimeHours! : 0), 0);
-    docPdf.text(`Horas Extra: +${formatHours(totalOT)}    Déficit: ${formatHours(totalDF)}`, 14, 56);
+    docPdf.text(`Horas Extra: +${formatHours(stHours)}    Déficit: -${formatHours(dfHours)}`, 14, 56);
 
     // Table Data
     const tableData = filteredActivities.map(a => [
@@ -426,22 +482,33 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
       startY: 65,
       head: [['FECHA', 'INCIDENTE', 'LABOR REALIZADA', 'TÉCNICOS', 'ST/DF', 'VIÁT.']],
       body: tableData,
-      headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 9, fontStyle: 'bold' },
-      bodyStyles: { fontSize: 8, textColor: [51, 65, 85] },
+      headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 9, fontStyle: 'bold', valign: 'middle' },
+      bodyStyles: { fontSize: 8.5, textColor: [51, 65, 85], valign: 'middle' },
       alternateRowStyles: { fillColor: [248, 250, 252] },
+      styles: { cellPadding: 3.5, valign: 'middle' },
       columnStyles: {
-        0: { cellWidth: 22 },
-        1: { cellWidth: 30 },
-        4: { cellWidth: 15, halign: 'center' },
-        5: { cellWidth: 20, halign: 'center' }
+        0: { cellWidth: 23 }, // 65 points equivalent, avoids year/date cut-off
+        1: { cellWidth: 33.5 }, // 95 points equivalent, avoids incident code split
+        3: { cellWidth: 33.5 }, // 95 points equivalent, ideal for names without extra parenthesis
+        4: { cellWidth: 16, halign: 'center' }, // 45 points equivalent
+        5: { cellWidth: 21, halign: 'center' }  // 60 points equivalent
       },
       margin: { top: 65 }
     });
 
-    // Footer
-    docPdf.addPage();
+    // Footer / Signatures
     const pageHeight = docPdf.internal.pageSize.height;
-    const finalY = pageHeight - 50;
+    const tableFinalY = (docPdf as any).lastAutoTable?.finalY || 65;
+    
+    // We need about 30 units of space for signature lines & text
+    const signatureRequiredHeight = 30;
+    let finalY = tableFinalY + 25; // Flow immediately below the table
+    
+    // If it doesn't fit on the current page, add a new page and align at pageHeight - 50
+    if (finalY + signatureRequiredHeight > pageHeight - 15) {
+      docPdf.addPage();
+      finalY = pageHeight - 50;
+    }
     
     docPdf.setFontSize(10);
     docPdf.setTextColor(150);
@@ -452,7 +519,8 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
     docPdf.line(pageWidth - 80, finalY - 5, pageWidth - 20, finalY - 5);
     docPdf.text('Firma Gerencia Técnica', pageWidth - 50, finalY + 5, { align: 'center' });
 
-    docPdf.save(`REPORTE_CANTV_${months[selectedMonth].toUpperCase()}_${selectedYear}.pdf`);
+    const pdfTechSuffix = selectedTechnician !== 'todos' ? `_INDIVIDUAL_${selectedTechnician.toUpperCase().replace(/\s+/g, '_')}` : '';
+    docPdf.save(`REPORTE_CANTV_${months[selectedMonth].toUpperCase()}_${selectedYear}${pdfTechSuffix}.pdf`);
     } catch (err) {
       console.error("Error generating PDF:", err);
       alert("Error al generar el reporte PDF.");
@@ -495,11 +563,11 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
         { header: 'Hora Entrada Tarde', key: 'he_t', width: 22 },
         { header: 'Hora Salida Tarde', key: 'hs_t', width: 22 },
         { header: 'HORAS', key: 'horas', width: 10 },
-        { header: 'JUSTIFIQUE', key: 'justifique', width: 45 }
+        { header: 'JUSTIFIQUE', key: 'justifique', width: 50 }
       ];
 
       const headerRow = sheet.getRow(1);
-      headerRow.height = 30;
+      headerRow.height = 24;
 
       headerRow.eachCell((cell, colNumber) => {
         cell.font = { bold: true, color: { argb: colNumber === 1 || colNumber === 15 ? 'FF000000' : 'FFFFFFFF' }, size: 9, name: 'Arial' };
@@ -508,7 +576,6 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
         let fgColor = 'FF4F81BD'; // Blue 
         
         if (colNumber === 1) fgColor = 'FFF79646'; // AREA (Orange)
-        if (colNumber >= 9 && colNumber <= 13) fgColor = 'FF5B9BD5'; // Horarios (Lighter Blue)
         if (colNumber === 15) fgColor = 'FFFCD5B4'; // JUSTIFIQUE (Peach)
 
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fgColor } };
@@ -526,6 +593,9 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
         const parts = a.participants && a.participants.length > 0 ? a.participants : (a.technicianName ? [a.technicianName] : []);
         
         parts.forEach(p => {
+          if (selectedTechnician !== 'todos' && (p || '').toLowerCase().trim() !== selectedTechnician.toLowerCase().trim()) {
+            return;
+          }
           const techMatch = technicians.find(t => (t.name || '').toLowerCase() === (p || '').toLowerCase());
           
           let he_m = formatTime24h(a.startTimeMorning || '', '07:30');
@@ -572,12 +642,16 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
           });
 
           row.getCell(3).alignment = { horizontal: 'left', vertical: 'middle' };
-          row.getCell(15).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
-          row.height = Math.max(15, Math.ceil((row.getCell(15).text?.length || 10) / 45) * 15);
+          const justCell = row.getCell('justifique');
+          justCell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
         });
       });
 
       sheet.columns.forEach(column => {
+        if (column.key === 'justifique') {
+          column.width = 50;
+          return;
+        }
         let maxLength = 0;
         column.eachCell({ includeEmpty: true }, cell => {
           const columnLength = cell.value ? cell.value.toString().length : 0;
@@ -588,14 +662,18 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
         column.width = maxLength < 12 ? 12 : maxLength + 4;
       });
 
+      // 1. Aplicar factor de optimización estándar para la columna de Justificación
+      optimizarAlturasJustificacionSGA(sheet);
+
       const buffer = await workbook.xlsx.writeBuffer();
       
-      const day = format(new Date(), 'dd');
-      const monthName = format(new Date(), 'MMMM', { locale: es });
-      const year = format(new Date(), 'yyyy');
-      
-      const selectedMonthName = months[selectedMonth].toUpperCase();
-      const fileName = `SOBRETIEMPO_CANTV_${day}_${monthName}_${year}_Mes_${selectedMonthName}_${selectedYear}.xlsx`;
+      const fechaFiltro = new Date(selectedYear, selectedMonth, 1);
+      const fileName = obtenerNombreArchivoExcel({
+        tipoDoc: 'Sobretiempo',
+        frecuencia: 'mensual',
+        fechaFiltro: fechaFiltro,
+        tecnicoSeleccionado: selectedTechnician
+      });
       
       saveAs(new Blob([buffer]), fileName);
 
@@ -608,8 +686,8 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header */}
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 bg-white p-6 rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02),0_15px_35px_rgba(0,0,0,0.06)] border border-slate-200">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full xl:w-auto">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-white p-6 rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.02),0_15px_35px_rgba(0,0,0,0.06)] border border-slate-200 w-full">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full lg:w-auto min-w-0">
           <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-brand-blue to-blue-600 rounded-3xl flex items-center justify-center text-white shadow-lg shadow-brand-blue/15 shrink-0">
             <Archive size={26} className="sm:size-7" />
           </div>
@@ -617,58 +695,76 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
             <h2 className="text-lg sm:text-xl font-display font-black text-slate-900 tracking-tight uppercase truncate">Historial de Reportes</h2>
             <div className="flex flex-wrap items-center gap-2 mt-0.5">
               <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Gestión administrativa</p>
-              <div className="hidden sm:block w-1.5 h-1.5 rounded-full bg-slate-300" />
-              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-1">
-                Central Maracay 4357
-              </p>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center bg-slate-50 p-1.5 rounded-2xl border border-slate-200 shadow-sm shrink-0 w-fit">
-          <select 
-            className="flex-1 sm:flex-initial bg-transparent border-none text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-600 focus:ring-0 cursor-pointer px-2 py-1.5 text-center min-w-[90px] sm:min-w-[120px] appearance-none outline-none focus:outline-none"
-            style={{ backgroundImage: 'none', paddingLeft: '8px', paddingRight: '8px', textAlignLast: 'center' }}
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-          >
-            {months
-              .map((m, i) => ({ name: m, value: i }))
-              .filter(opt => {
-                if (selectedYear === currentYear) {
-                  return opt.value <= new Date().getMonth();
-                }
-                return true;
-              })
-              .map((opt) => (
-                <option key={opt.name} value={opt.value} className="bg-white text-slate-800 font-sans font-bold uppercase tracking-normal text-left">
-                  {opt.name}
-                </option>
-              ))
-            }
-          </select>
-          <div className="w-px h-4 bg-slate-200 shrink-0" />
-          <select 
-            className="flex-1 sm:flex-initial bg-transparent border-none text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-600 focus:ring-0 cursor-pointer px-2 py-1.5 text-center min-w-[70px] sm:min-w-[80px] appearance-none outline-none focus:outline-none block"
-            style={{ backgroundImage: 'none', paddingLeft: '8px', paddingRight: '8px', textAlignLast: 'center' }}
-            value={selectedYear}
-            onChange={(e) => {
-              const yr = parseInt(e.target.value);
-              setSelectedYear(yr);
-              if (yr === currentYear) {
-                const curMonth = new Date().getMonth();
-                if (selectedMonth > curMonth) {
-                  setSelectedMonth(curMonth);
-                }
+        <div className="flex flex-wrap gap-3 items-center justify-end w-full lg:w-auto ml-auto min-w-0">
+          {/* Píldora de Selección de Fecha (Mes / Año) */}
+          <div className="flex items-center bg-slate-50 p-1.5 rounded-2xl border border-slate-200 shadow-sm shrink-0 w-full sm:w-auto justify-center sm:justify-start">
+            <select 
+              className="flex-1 sm:flex-initial bg-transparent border-none text-[10px] sm:text-xs font-black uppercase tracking-widest text-[#4A4A4A] focus:ring-0 cursor-pointer px-2 py-1.5 text-center min-w-[90px] sm:min-w-[120px] appearance-none outline-none focus:outline-none w-full sm:w-auto"
+              style={{ backgroundImage: 'none', paddingLeft: '8px', paddingRight: '8px', textAlignLast: 'center' }}
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+            >
+              {months
+                .map((m, i) => ({ name: m, value: i }))
+                .filter(opt => {
+                  if (selectedYear === currentYear) {
+                    return opt.value <= new Date().getMonth();
+                  }
+                  return true;
+                })
+                .map((opt) => (
+                  <option key={opt.name} value={opt.value} className="bg-white text-slate-800 font-sans font-bold uppercase tracking-normal text-left">
+                    {opt.name}
+                  </option>
+                ))
               }
-            }}
-          >
-            {years.map(y => (
-              <option key={y} value={y} className="bg-white text-slate-800 font-sans font-bold uppercase tracking-normal text-left">
-                {y}
+            </select>
+            <div className="w-px h-4 bg-slate-200 shrink-0" />
+            <select 
+              className="flex-1 sm:flex-initial bg-transparent border-none text-[10px] sm:text-xs font-black uppercase tracking-widest text-[#4A4A4A] focus:ring-0 cursor-pointer px-2 py-1.5 text-center min-w-[70px] sm:min-w-[80px] appearance-none outline-none focus:outline-none block w-full sm:w-auto"
+              style={{ backgroundImage: 'none', paddingLeft: '8px', paddingRight: '8px', textAlignLast: 'center' }}
+              value={selectedYear}
+              onChange={(e) => {
+                const yr = parseInt(e.target.value);
+                setSelectedYear(yr);
+                if (yr === currentYear) {
+                  const curMonth = new Date().getMonth();
+                  if (selectedMonth > curMonth) {
+                    setSelectedMonth(curMonth);
+                  }
+                }
+              }}
+            >
+              {years.map(y => (
+                <option key={y} value={y} className="bg-white text-slate-800 font-sans font-bold uppercase tracking-normal text-left">
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Selector de Personal */}
+          <div className="flex items-center bg-slate-50 p-1.5 rounded-2xl border border-slate-200 shadow-sm shrink-0 w-full sm:w-auto justify-center sm:justify-start">
+            <select 
+              className="flex-1 sm:flex-initial bg-transparent border-none text-[10px] sm:text-xs font-black uppercase tracking-widest text-[#4A4A4A] focus:ring-0 cursor-pointer px-2 py-1.5 text-center min-w-[120px] sm:min-w-[170px] appearance-none outline-none focus:outline-none w-full sm:w-auto"
+              style={{ backgroundImage: 'none', paddingLeft: '8px', paddingRight: '8px', textAlignLast: 'center' }}
+              value={selectedTechnician}
+              onChange={(e) => setSelectedTechnician(e.target.value)}
+            >
+              <option value="todos" className="bg-white text-slate-800 font-sans font-bold uppercase tracking-normal text-left">
+                PERSONAL (TODOS)
               </option>
-            ))}
-          </select>
+              {technicians.map((t) => (
+                <option key={t.id} value={t.name} className="bg-white text-slate-800 font-sans font-medium tracking-normal text-left">
+                  {t.name.toUpperCase()}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -746,7 +842,7 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
               <p className="text-[8px] sm:text-[10px] uppercase font-bold tracking-widest text-[#4A4A4A] leading-tight">Jornadas &gt; 10h</p>
               <p className="text-sm sm:text-lg md:text-xl lg:text-2xl font-display font-black text-brand-red leading-none tracking-tight mt-1 sm:mt-2.5 break-words flex items-baseline gap-1">
                 <span>{excesoPersonasMensual}</span>
-                <span className="text-[10px] sm:text-xs font-bold font-sans text-red-500 uppercase tracking-widest">{excesoPersonasMensual === 0 ? 'casos' : excesoPersonasMensual === 1 ? 'caso' : 'alertas'}</span>
+                <span className="text-[10px] sm:text-xs font-bold font-sans text-red-500 uppercase tracking-widest">{excesoPersonasMensual === 1 ? 'caso' : 'casos'}</span>
               </p>
             </div>
             <div className="w-7 h-7 sm:w-10 sm:h-10 bg-brand-red/5 rounded-lg sm:rounded-xl flex items-center justify-center text-brand-red shrink-0">
@@ -771,9 +867,9 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
               <Table size={20} />
             </div>
             <div className="min-w-0 flex-1">
-              <span className="block font-display font-bold text-xs sm:text-sm text-slate-800 leading-tight">Planilla de Labores TX/DX</span>
+              <span className="block font-display font-bold text-xs sm:text-sm text-slate-800 leading-tight">Planificación Mensual</span>
               <span className="block text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 leading-tight">
-                Formato Excel (XLSX) · {months[selectedMonth]} {selectedYear}
+                {months[selectedMonth].toUpperCase()} {selectedYear}
               </span>
             </div>
           </button>
@@ -786,9 +882,9 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
               <Download size={20} />
             </div>
             <div className="min-w-0 flex-1">
-              <span className="block font-display font-bold text-xs sm:text-sm text-slate-800 leading-tight">Declaración de Sobretiempos</span>
+              <span className="block font-display font-bold text-xs sm:text-sm text-slate-800 leading-tight">Sobretiempo de Ley</span>
               <span className="block text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 leading-tight">
-                Formato de Ley (XLSX) · {months[selectedMonth]} {selectedYear}
+                {months[selectedMonth].toUpperCase()} {selectedYear}
               </span>
             </div>
           </button>
@@ -801,9 +897,9 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
               <FileText size={20} />
             </div>
             <div className="min-w-0 flex-1">
-              <span className="block font-display font-bold text-xs sm:text-sm text-slate-800 leading-tight">Consolidado de Actividades</span>
+              <span className="block font-display font-bold text-xs sm:text-sm text-slate-800 leading-tight">Reporte Consolidado</span>
               <span className="block text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 leading-tight">
-                Reporte Institucional (PDF) · {months[selectedMonth]} {selectedYear}
+                {months[selectedMonth].toUpperCase()} {selectedYear}
               </span>
             </div>
           </button>
@@ -830,8 +926,8 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
               const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
 
               return (
-                <div className="w-full max-w-4xl bg-white border border-slate-200 rounded-[2rem] p-4 sm:p-6 shadow-[0_4px_15px_rgba(0,0,0,0.01)]">
-                  <div className="grid grid-cols-7 gap-1 sm:gap-2 text-center mb-3">
+                <div className="w-full bg-white border border-slate-200 rounded-[2rem] p-6 sm:p-8 shadow-[0_4px_15px_rgba(0,0,0,0.01)]">
+                  <div className="grid grid-cols-7 gap-1.5 sm:gap-3 text-center mb-4 w-full">
                     {daysOfWeek.map((dayName, idx) => (
                       <div key={dayName} className={cn(
                         "text-[10px] sm:text-xs font-black uppercase tracking-wider py-1.5",
@@ -842,10 +938,10 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
                     ))}
                   </div>
 
-                  <div className="grid grid-cols-7 gap-1.5 sm:gap-3">
+                  <div className="grid grid-cols-7 gap-1.5 sm:gap-3 w-full">
                     {/* Trailing days of previous month */}
                     {Array.from({ length: startDayIndex }).map((_, index) => (
-                      <div key={`blank-${index}`} className="aspect-square bg-slate-50/40 border border-slate-100 rounded-2xl opacity-20" />
+                      <div key={`blank-${index}`} className="w-full aspect-square bg-slate-50/40 border border-slate-100 rounded-2xl opacity-20" />
                     ))}
 
                     {/* Active days in the calendar */}
@@ -861,7 +957,7 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
                           disabled={!hasActs}
                           onClick={() => hasActs && setSelectedDayActivities({ date: d, activities: dayActs })}
                           className={cn(
-                            "aspect-square p-1.5 sm:p-3 rounded-2xl border transition-all flex flex-col justify-between text-left group select-none relative focus:outline-none focus:ring-2 focus:ring-brand-blue/30",
+                            "w-full aspect-square flex flex-col justify-between p-3 rounded-2xl border transition-all text-left group select-none relative focus:outline-none focus:ring-2 focus:ring-brand-blue/30",
                             hasActs 
                               ? "bg-gradient-to-br from-brand-blue to-blue-600 border-brand-blue text-white shadow-md shadow-brand-blue/10 hover:shadow-lg hover:scale-[1.04] active:scale-95 cursor-pointer" 
                               : "bg-slate-100/50 border-slate-200/40 text-slate-300 opacity-40 hover:bg-slate-100/70"
@@ -950,51 +1046,25 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
                       </div>
                     </div>
                     
-                    <p className="text-xs text-slate-500 line-clamp-2 mb-4 pr-4">{activity.description}</p>
+                    <DescripcionExpandible texto={activity.description || ''} />
                     
-                    <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs">
+                    <div className="space-y-4 text-xs">
                       <div className="flex items-start gap-2">
                         <Clock size={14} className="text-slate-400 shrink-0 mt-0.5" />
                         <div>
-                          <p className="font-bold text-slate-700">{activity.startTime || '--:--'} a {activity.endTime || '--:--'}</p>
+                          <p className="font-bold text-slate-700">{(activity.startTimeMorning || activity.startTime) || '--:--'} a {(activity.endTimeAfternoon || activity.endTime) || '--:--'}</p>
                           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Horario</p>
                         </div>
                       </div>
-                      
-                      <div className="flex items-start gap-2">
-                        <Wrench size={14} className="text-slate-400 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="font-bold text-slate-700 capitalize">{activity.type}</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Tipo</p>
-                        </div>
-                      </div>
 
-                      <div className="col-span-2 pt-3 border-t border-slate-100 mt-1">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex flex-wrap gap-1">
-                            {activity.participants?.map((p, pIdx) => (
-                              <span key={`${activity.id}-p-${pIdx}`} className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md italic">
-                                {p.split(' ')[0]}
-                              </span>
-                            ))}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {(activity.overtimeHours || 0) !== 0 && (
-                              <span className={cn(
-                                "text-[10px] font-black px-2 py-0.5 rounded border border-transparent whitespace-nowrap",
-                                (activity.overtimeHours || 0) > 0 
-                                  ? "bg-emerald-50 text-emerald-600 border-emerald-100" 
-                                  : "bg-red-50 text-red-600 border-red-100"
-                              )}>
-                                {(activity.overtimeHours || 0) > 0 ? '+' : ''}{formatHours(activity.overtimeHours || 0)}
-                              </span>
-                            )}
-                            {activity.hasPerDiem && (
-                              <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 whitespace-nowrap">
-                                Bs. {Number(activity.perDiemAmount || 0).toFixed(2)}
-                              </span>
-                            )}
-                          </div>
+                      <div className="pt-3 border-t border-slate-100 mt-1">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Técnicos Participantes</p>
+                        <div className="flex flex-wrap gap-1">
+                          {activity.participants?.map((p, pIdx) => (
+                            <span key={`${activity.id}-p-${pIdx}`} className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-md italic">
+                              {p.split(' ')[0]}
+                            </span>
+                          ))}
                         </div>
                       </div>
 
@@ -1008,7 +1078,16 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
       )}
 
       {/* Monthly Summary Details Modal */}
-      {monthlySummaryDetails && (() => {
+      {monthlySummaryDetails === 'exceso' && (
+        <LottAlertsModal 
+          isOpen={true}
+          onClose={() => setMonthlySummaryDetails(null)}
+          activities={filteredActivities}
+          technicians={technicians}
+        />
+      )}
+
+      {monthlySummaryDetails && monthlySummaryDetails !== 'exceso' && (() => {
         const modalContentMap = {
           total: {
             title: 'Horas Totales (Mensual)',
@@ -1057,9 +1136,9 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
                     <div>
                       <h3 className="text-lg font-display font-black text-slate-900 leading-tight">
                         {modalInfo.title}
-                        {monthlySummaryDetails === 'exceso' && (
+                        {false && (
                           <span className="ml-2 text-xs font-bold font-sans bg-rose-50 border border-rose-100 text-rose-600 px-2.5 py-0.5 rounded-full inline-block align-middle">
-                            {excesoPersonasMensual} {excesoPersonasMensual === 0 ? 'casos' : excesoPersonasMensual === 1 ? 'caso' : 'alertas'}
+                            {excesoPersonasMensual} {excesoPersonasMensual === 1 ? 'caso' : 'casos'}
                           </span>
                         )}
                       </h3>
@@ -1077,7 +1156,7 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
 
               {/* List body exactly mirroring the Dashboard's list item styles */}
               <div className="p-5 sm:p-6 overflow-y-auto flex-1 custom-scrollbar space-y-2">
-                {monthlySummaryDetails === 'exceso' ? (
+                {false ? (
                   (() => {
                     const infractionsByWeek: Record<string, Record<string, {
                       weeklyOvertime: number;
@@ -1176,21 +1255,7 @@ export default function ReportGenerator({ activities, technicians }: ReportGener
                               {dailyArr.length > 0 && (
                                 <div className="p-3 space-y-2 bg-white">
                                   {dailyArr.sort((a: any, b: any) => b.date.getTime() - a.date.getTime()).map((d: any, idx: number) => (
-                                    <div key={`daily-${idx}`} className="flex justify-between items-center pl-3 py-1.5 border-l-2 border-brand-red/40 ml-1">
-                                      <div className="flex flex-col gap-1">
-                                        <div className="text-[10px] font-bold text-slate-600 flex items-center gap-1.5 uppercase tracking-widest">
-                                          <span className="bg-slate-100 text-slate-500 px-1 py-0.5 rounded flex items-center gap-1 leading-none shrink-0">
-                                            📅  {formatDateSpanish(d.date, 'dd MMM')}
-                                          </span>
-                                        </div>
-                                        <span className="text-[10px] text-slate-400 font-medium line-clamp-1 italic max-w-xs">
-                                          {d.titles.map((t: string) => capitalizeSentence(!t || t.trim().toLowerCase() === 's' ? 'Mantenimiento Preventivo de Enlace' : t)).join(', ')}
-                                        </span>
-                                      </div>
-                                      <div className="text-[10px] font-black font-mono text-brand-red border border-brand-red/15 bg-brand-red/5 px-2 py-1 rounded-lg whitespace-nowrap shadow-sm">
-                                        EXCESO DIARIO: {formatHours(d.total).toUpperCase()}
-                                      </div>
-                                    </div>
+                                    <ReportDailyExcessRow key={`daily-${idx}`} d={d} />
                                   ))}
                                 </div>
                               )}

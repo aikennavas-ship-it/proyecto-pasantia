@@ -15,9 +15,11 @@ import {
   AreaChart, Area, PieChart, Pie, Cell, Legend
 } from 'recharts';
 import { Activity, Technician } from '../../../types';
-import { ClipboardList, CheckCircle2, Clock, AlertTriangle, LayoutDashboard, TrendingUp, Users, ShieldCheck, Eye, X, ArrowUpRight, DollarSign, Timer, FileText, Truck } from 'lucide-react';
-import { cn, formatDateSpanish, capitalizeSentence, getActivityBounds, calculateRealHours, parseTime } from '../../../lib/utils';
+import { ClipboardList, CheckCircle2, Clock, AlertTriangle, LayoutDashboard, TrendingUp, Users, ShieldCheck, Eye, X, ArrowUpRight, DollarSign, Timer, FileText, Truck, Calendar, User } from 'lucide-react';
+import { cn, formatDateSpanish, capitalizeSentence, getActivityBounds, calculateRealHours, parseTime, calculateMetrics, calculateExcesoPersonas } from '../../../lib/utils';
 import { formatHours } from '../../activities/components/ActivityForm';
+import { obtenerDatosUsuarioReactivo, inicializarTecnicosIdsSeguro } from '../../../utils/resolver';
+import LottAlertsModal from '../../activities/components/LottAlertsModal';
 import { format, subDays, isAfter, startOfWeek, endOfWeek, isSameWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
@@ -32,6 +34,28 @@ interface DashboardProps {
 }
 
 const COLORS = ['#004a99', '#e30613', '#10b981', '#f59e0b', '#6366f1', '#64748b'];
+
+// COMPONENTE TOOLTIP PERSONALIZADO (Evita solapamientos en el centro)
+const CustomTooltip = ({ active, payload }: any) => {
+  if (active && payload && payload.length) {
+    const item = payload[0].payload;
+    return (
+      <div className="bg-slate-900 border border-slate-800 text-white text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded shadow-xl pointer-events-none whitespace-nowrap">
+        {item.name}: {item.value}
+      </div>
+    );
+  }
+  return null;
+};
+
+const formatAverageHours = (promedioDecimal: number): string => {
+  if (isNaN(promedioDecimal) || promedioDecimal <= 0) return '0h';
+  const totalMinutos = Math.floor(promedioDecimal * 60);
+  const horas = Math.floor(totalMinutos / 60);
+  const minutos = totalMinutos % 60;
+  if (minutos === 0) return `${horas}h`;
+  return `${horas}h ${minutos}min`;
+};
 
 type SummaryType = 'labores' | 'st' | 'df' | 'viaticos' | 'fatiga' | 'personal' | 'promedio' | 'documentos' | 'flota' | null;
 
@@ -71,26 +95,7 @@ export default function Dashboard({
       if (typeof a.date.toDate === 'function') {
         return a.date.toDate();
       }
-      if (a.date instanceof Date) {
-        return a.date;
-      }
-      const dateVal = a.date as any;
-      if (dateVal && dateVal.seconds !== undefined) {
-        return new Date(dateVal.seconds * 1000);
-      }
-      if (typeof dateVal === 'string') {
-        if (dateVal.includes('-')) {
-          const parts = dateVal.split('T')[0].split('-');
-          if (parts.length === 3) {
-            return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-          }
-        }
-      }
-      const parsed = new Date(dateVal);
-      if (isNaN(parsed.getTime())) {
-        return new Date();
-      }
-      return parsed;
+      return new Date(a.date as any);
     } catch {
       return new Date();
     }
@@ -122,10 +127,22 @@ export default function Dashboard({
     }
   };
 
-  const filteredActivities = React.useMemo(() => {
-    return activities.filter(a => {
-      const date = safeGetActivityDate(a);
-      return date.getFullYear() === selectedYear && date.getMonth() === selectedMonth;
+  const monthlyActivities = React.useMemo(() => {
+    return activities.filter(act => {
+      if (!act || !act.date) return false;
+      let year, monthIndex;
+      
+      if (typeof act.date === 'string') {
+        const [y, m, d] = (act.date as string).split('T')[0].split('-').map(Number);
+        year = y;
+        monthIndex = m - 1;
+      } else {
+        const d = safeGetActivityDate(act);
+        year = d.getFullYear();
+        monthIndex = d.getMonth();
+      }
+      
+      return monthIndex === selectedMonth && year === selectedYear;
     });
   }, [activities, selectedYear, selectedMonth, safeGetActivityDate]);
 
@@ -134,7 +151,7 @@ export default function Dashboard({
     const alerts: any[] = [];
     const record: Record<string, Activity[]> = {};
     
-    filteredActivities.forEach(a => {
+    monthlyActivities.forEach(a => {
       const techs = a.participants && a.participants.length > 0 ? a.participants : [a.technicianName];
       techs.forEach(t => {
         if (t && t !== 'Sin asignar') {
@@ -193,25 +210,38 @@ export default function Dashboard({
     });
 
     return { fatigueAlerts: alerts, techActivitiesRecord: record };
-  }, [filteredActivities, safeGetActivityDate]);
+  }, [monthlyActivities, safeGetActivityDate]);
+
+  const excesoPersonasDashboard = React.useMemo(() => {
+    return calculateExcesoPersonas(monthlyActivities, true).count;
+  }, [monthlyActivities]);
 
   const stats = React.useMemo(() => {
-    const totalOT = filteredActivities.reduce((acc, a) => acc + ((a.overtimeHours || 0) > 0 ? a.overtimeHours! : 0), 0);
-    const totalDF = filteredActivities.reduce((acc, a) => acc + ((a.overtimeHours || 0) < 0 ? a.overtimeHours! : 0), 0);
-    const totalPerDiemAmount = filteredActivities.reduce((acc, a) => acc + (Number(a.perDiemAmount) || 0), 0);
-    const totalPerDiemCount = filteredActivities.filter(a => a.hasPerDiem).length;
+    const metrics = calculateMetrics(monthlyActivities, 'todos');
+    const totalOT = metrics.stAcumulado;
+    const totalDF = -(metrics.dfAcumulado);
+    
+    const totalPerDiemAmount = monthlyActivities.reduce((acc, a) => acc + (Number(a.perDiemAmount) || 0), 0);
+    const totalPerDiemCount = monthlyActivities.filter(a => a.hasPerDiem).length;
     const totalTechnicians = technicians.length;
 
-    const totalActivityHours = filteredActivities.reduce((acc, a) => acc + (a.totalHours || 0), 0);
-    const avgHours = filteredActivities.length > 0 ? (totalActivityHours / filteredActivities.length) : 0;
+    const totalActivityHours = metrics.total;
+    const avgHours = monthlyActivities.length > 0 ? (totalActivityHours / monthlyActivities.length) : 0;
     
-    const documentedCount = filteredActivities.filter(a => a.documentation === 'SI').length;
-    const undocumentedCount = filteredActivities.filter(a => a.documentation === 'NO').length;
+    const documentedCount = monthlyActivities.filter(a => a.documentation === 'SI').length;
+    const undocumentedCount = monthlyActivities.filter(a => a.documentation === 'NO').length;
 
-    const fleetCount = [...new Set(filteredActivities.map(a => a.fleet).filter(f => f && f.trim() !== 'N/A' && f.trim() !== ''))].length;
+    const isExcludedFleet = (f: string) => {
+      if (!f) return true;
+      const upper = f.trim().toUpperCase();
+      const excluded = ['S/V', 'NINGUNO', 'NINGUNA', 'N/A', 'SIN VEHICULO', 'SIN VEHÍCULO', 'NONE', 'S/D', 'S/N'];
+      return excluded.includes(upper) || upper === '' || upper === '-';
+    };
+
+    const fleetCount = [...new Set(monthlyActivities.map(a => a.fleet).filter(f => f && !isExcludedFleet(f)))].length;
 
     return {
-      total: filteredActivities.length,
+      total: monthlyActivities.length,
       technicians: totalTechnicians,
       ot: totalOT,
       df: totalDF,
@@ -221,12 +251,12 @@ export default function Dashboard({
       documentedCount: documentedCount,
       fleetCount
     };
-  }, [filteredActivities, technicians.length]);
+  }, [monthlyActivities, technicians.length]);
 
   // Specialty Data Distribution for Pie chart
   const chartSpecialtyData = React.useMemo(() => {
     const specialtyCounts: Record<string, number> = {};
-    filteredActivities.forEach(a => {
+    monthlyActivities.forEach(a => {
       const participantNames = a.participants && a.participants.length > 0 ? a.participants : [a.technicianName];
       const uniquesInActivity = new Set<string>();
       participantNames.forEach(name => {
@@ -245,11 +275,11 @@ export default function Dashboard({
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 6);
-  }, [filteredActivities, technicians]);
+  }, [monthlyActivities, technicians]);
 
   // Area chart data: Activities in selected month
   const timelineData = React.useMemo(() => {
-    const activitiesByDate = filteredActivities.reduce((acc: any, act) => {
+    const activitiesByDate = monthlyActivities.reduce((acc: any, act) => {
       const parsedDate = safeGetActivityDate(act);
       const d = formatDateSpanish(parsedDate, 'dd MMM');
       acc[d] = (acc[d] || 0) + 1;
@@ -266,47 +296,49 @@ export default function Dashboard({
       date: dateStr,
       actividades: activitiesByDate[dateStr] || 0
     }));
-  }, [filteredActivities, selectedYear, selectedMonth, safeGetActivityDate]);
+  }, [monthlyActivities, selectedYear, selectedMonth, safeGetActivityDate]);
 
   // Bar chart data: Top technicians
   const topTechsData = React.useMemo(() => {
-    const techCounts = filteredActivities.reduce((acc: any, a) => {
-      const techs = a.participants && a.participants.length > 0 ? a.participants : [a.technicianName];
-      techs.forEach(t => {
-        if (t && t !== 'Sin asignar') {
-          const shortName = t.split(' ').slice(0, 2).join(' ');
-          acc[shortName] = (acc[shortName] || 0) + 1;
-        }
+    const techCounts: Record<string, number> = {};
+    monthlyActivities.forEach(a => {
+      const uids = inicializarTecnicosIdsSeguro(a, technicians);
+      uids.forEach(uid => {
+        const resolved = obtenerDatosUsuarioReactivo(uid, technicians);
+        techCounts[resolved.uid] = (techCounts[resolved.uid] || 0) + 1;
       });
-      return acc;
-    }, {});
+    });
 
     return Object.entries(techCounts)
-      .map(([name, count]) => ({ name, labores: count as number }))
+      .map(([uid, count]) => {
+        const resolved = obtenerDatosUsuarioReactivo(uid, technicians);
+        return { name: resolved.nombreCompleto, nombreCompleto: resolved.nombreCompleto, labores: count };
+      })
       .sort((a, b) => b.labores - a.labores)
       .slice(0, 5);
-  }, [filteredActivities]);
+  }, [monthlyActivities, technicians]);
 
   // Per Diem distribution data
   const perDiemChartData = React.useMemo(() => {
-    const perDiemByTech = filteredActivities.reduce((acc: any, a) => {
+    const perDiemByTech: Record<string, number> = {};
+    monthlyActivities.forEach(a => {
       if (a.hasPerDiem && a.perDiemAmount) {
-        const techs = a.participants && a.participants.length > 0 ? a.participants : [a.technicianName];
-        techs.forEach(t => {
-          if (t && t !== 'Sin asignar') {
-            const shortName = t.split(' ').slice(0, 2).join(' ');
-            acc[shortName] = (acc[shortName] || 0) + Number(a.perDiemAmount);
-          }
+        const uids = inicializarTecnicosIdsSeguro(a, technicians);
+        uids.forEach(uid => {
+          const resolved = obtenerDatosUsuarioReactivo(uid, technicians);
+          perDiemByTech[resolved.uid] = (perDiemByTech[resolved.uid] || 0) + Number(a.perDiemAmount);
         });
       }
-      return acc;
-    }, {});
+    });
 
     return Object.entries(perDiemByTech)
-      .map(([name, monto]) => ({ name, monto: monto as number }))
+      .map(([uid, monto]) => {
+        const resolved = obtenerDatosUsuarioReactivo(uid, technicians);
+        return { name: resolved.nombreCompleto, nombreCompleto: resolved.nombreCompleto, monto: monto };
+      })
       .sort((a, b) => b.monto - a.monto)
       .slice(0, 5);
-  }, [filteredActivities]);
+  }, [monthlyActivities, technicians]);
     
   return (
     <div className="space-y-8 animate-in fade-in duration-700 pb-12">
@@ -319,10 +351,6 @@ export default function Dashboard({
             <h2 className="text-lg sm:text-xl font-display font-black text-slate-900 tracking-tight uppercase truncate">Panel Principal</h2>
             <div className="flex flex-wrap items-center gap-2 mt-0.5">
               <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Métricas para {months[selectedMonth]} {selectedYear}</p>
-              <div className="hidden sm:block w-1.5 h-1.5 rounded-full bg-slate-300" />
-              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-1">
-                Central Maracay 4357
-              </p>
             </div>
           </div>
         </div>
@@ -412,19 +440,11 @@ export default function Dashboard({
         />
         <StatCard 
           title="Promedio por Labor" 
-          value={`${stats.avgHours.toFixed(1)}h`} 
+          value={formatAverageHours(stats.avgHours)} 
           icon={Timer} 
           color="text-cyan-500" 
           bg="bg-cyan-50" 
           onClick={() => setActiveSummary('promedio')}
-        />
-        <StatCard 
-          title="Documentadas" 
-          value={stats.documentedCount} 
-          icon={FileText} 
-          color="text-teal-500" 
-          bg="bg-teal-50" 
-          onClick={() => setActiveSummary('documentos')}
         />
         <StatCard 
           title="Flota Activa" 
@@ -510,12 +530,12 @@ export default function Dashboard({
                </div>
                <div>
                   <h3 className="text-[15px] font-black text-slate-800 uppercase tracking-tight">Acciones Inmediatas</h3>
-                  <p className="text-[11px] font-medium text-slate-500 mt-0.5">Alertas de prevención y fatiga</p>
+                  <p className="text-[11px] font-medium text-slate-500 mt-0.5">Casos de prevención y fatiga</p>
                </div>
             </div>
             <div className="space-y-3">
 
-               {fatigueAlerts.length > 0 && (
+               {excesoPersonasDashboard > 0 && (
                  <div className="p-3 bg-rose-50 rounded-xl border border-rose-100 flex items-start gap-3 cursor-pointer hover:bg-rose-100 transition-colors group" onClick={() => setActiveSummary('fatiga')}>
                    <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0 shadow-sm border border-rose-50 group-hover:scale-105 transition-transform">
                      <ShieldCheck className="text-rose-500" size={16} />
@@ -523,13 +543,13 @@ export default function Dashboard({
                    <div>
                      <p className="text-xs font-bold text-slate-800">Riesgo de Fatiga LOTTT</p>
                      <p className="text-[10px] text-slate-500 font-medium leading-tight mt-0.5">
-                       <strong className="text-rose-700 font-black">{fatigueAlerts.length} técnicos</strong> identificados con exceso de jornada.
+                       <strong className="text-rose-700 font-black">{excesoPersonasDashboard} {excesoPersonasDashboard === 1 ? 'CASO' : 'CASOS'}</strong> identificados con exceso de jornada.
                      </p>
                    </div>
                  </div>
                )}
 
-               {fatigueAlerts.length === 0 && (
+               {excesoPersonasDashboard === 0 && (
                  <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 text-center flex flex-col items-center">
                    <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mb-3">
                      <CheckCircle2 size={24} className="text-emerald-500" />
@@ -552,19 +572,24 @@ export default function Dashboard({
               </div>
             </div>
             
-            <div className="flex flex-col items-center justify-between w-full h-full min-w-0 gap-4 py-1 mt-4">
-              {/* Contenedor Superior (Ancho Fijo 130px) exclusivo para la dona */}
-              <div className="w-[130px] h-[130px] relative flex-shrink-0 flex items-center justify-center">
+            <div className="flex flex-col items-center justify-center w-full h-full min-w-0 py-6 mt-4">
+              {/* Contenedor (Ancho Fijo 140px) exclusivo para la dona */}
+              <div className="w-[140px] h-[140px] relative flex-shrink-0 flex items-center justify-center">
                 {chartSpecialtyData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
+                      <Tooltip 
+                        content={<CustomTooltip />} 
+                        cursor={false} 
+                        wrapperStyle={{ zIndex: 100 }} 
+                      />
                       <Pie
                         data={chartSpecialtyData}
                         cx="50%"
                         cy="50%"
-                        innerRadius={42}
-                        outerRadius={58}
-                        paddingAngle={4}
+                        innerRadius={48}
+                        outerRadius={68}
+                        paddingAngle={3}
                         dataKey="value"
                         stroke="none"
                       >
@@ -572,9 +597,6 @@ export default function Dashboard({
                           <Cell key={`cell-specialty-${entry.name}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip 
-                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '11.5px', fontWeight: 'bold' }}
-                      />
                     </PieChart>
                   </ResponsiveContainer>
                 ) : (
@@ -583,32 +605,12 @@ export default function Dashboard({
                   </div>
                 )}
                 {chartSpecialtyData.length > 0 && (
-                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-2xl font-black text-slate-900 tracking-tighter leading-none">{stats.total}</span>
-                    <span className="text-[8px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-0.5">Labores</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Divisor sutil */}
-              <div className="w-full border-t border-slate-100" />
-
-              {/* Contenedor Inferior (Rejilla de 2 columnas) */}
-              <div className="w-full grid grid-cols-2 gap-x-4 gap-y-2 text-[10px] font-mono pt-2">
-                {chartSpecialtyData.map((entry, index) => (
-                  <div key={`legend-${entry.name}`} className="flex items-center justify-between min-w-0 w-full">
-                    <div className="flex items-center min-w-0">
-                      <span 
-                        className="w-2 h-2 rounded-full mr-1.5 shrink-0" 
-                        style={{ backgroundColor: COLORS[index % COLORS.length] }} 
-                      />
-                      <span className="truncate text-slate-600 uppercase font-extrabold tracking-wide">{entry.name}</span>
-                    </div>
-                    <span className="text-slate-400 shrink-0 ml-1 font-bold select-none">
-                      {entry.value} {entry.value === 1 ? 'labor' : 'labores'}
+                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none z-10 select-none">
+                    <span className="text-3xl font-black text-slate-800 leading-none">
+                      {stats.total}
                     </span>
                   </div>
-                ))}
+                )}
               </div>
             </div>
           </div>
@@ -617,16 +619,24 @@ export default function Dashboard({
 
       {/* Floating Summary Overlays */}
       <AnimatePresence>
-        {activeSummary && (
+        {activeSummary && activeSummary !== 'fatiga' && (
           <SummaryModal 
             type={activeSummary} 
             onClose={() => setActiveSummary(null)} 
-            activities={filteredActivities}
+            activities={monthlyActivities}
             topTechs={topTechsData}
             technicians={technicians}
             onSeeDetails={onSeeDetails}
             fatigueAlerts={fatigueAlerts}
             user={user}
+          />
+        )}
+        {activeSummary === 'fatiga' && (
+          <LottAlertsModal 
+            isOpen={true}
+            onClose={() => setActiveSummary(null)}
+            activities={monthlyActivities}
+            technicians={technicians}
           />
         )}
       </AnimatePresence>
@@ -635,16 +645,55 @@ export default function Dashboard({
 }
 
 const formatActivityDate = (a: any) => {
-  let d;
-  if (a.createdAt) {
-    d = typeof a.createdAt.toDate === 'function' ? a.createdAt.toDate() : new Date(a.createdAt);
-  } else {
-    d = typeof a.date.toDate === 'function' ? a.date.toDate() : new Date(a.date);
+  if (!a || !a.date) return '';
+  
+  const dateVal = a.date;
+  
+  if (typeof dateVal === 'string') {
+    const parts = dateVal.split('T')[0].split('-');
+    if (parts.length >= 3) {
+      const [year, month, day] = parts;
+      return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
+    }
+    return dateVal;
   }
-  return format(d, 'dd/MM/yyyy');
+
+  let d;
+  if (typeof dateVal.toDate === 'function') {
+    d = dateVal.toDate();
+  } else if (dateVal instanceof Date) {
+    d = dateVal;
+  } else if (dateVal.seconds !== undefined) {
+    d = new Date(dateVal.seconds * 1000);
+  } else {
+    d = new Date(); // fallback
+  }
+
+  const day = d.getDate().toString().padStart(2, '0');
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
 };
 
-function SummaryItemRow({ label, value, sub, color }: { label: string; value: string; sub: string; color: string }) {
+function SummaryItemRow({ 
+  label, 
+  value, 
+  sub, 
+  color, 
+  techName, 
+  dateString, 
+  rawLabel = false, 
+  rawTechName = false 
+}: { 
+  label: string; 
+  value: string; 
+  sub: string; 
+  color: string; 
+  techName?: string; 
+  dateString?: string; 
+  rawLabel?: boolean; 
+  rawTechName?: boolean 
+}) {
   const isDate = /^\d{2}\/\d{2}\/\d{4}$/.test(sub);
   let displaySub = sub;
   if (isDate) {
@@ -670,7 +719,7 @@ function SummaryItemRow({ label, value, sub, color }: { label: string; value: st
     "text-xs font-black font-mono shrink-0 px-2.5 py-1 rounded-lg border whitespace-nowrap shadow-sm transition-all duration-300",
     customBadgeStyle ? customBadgeStyle : (
       color.includes("emerald") ? "bg-emerald-50 text-emerald-600 border-emerald-100" :
-      color.includes("red") || color.includes("rose") ? "bg-red-50 text-red-600 border-red-100 animate-pulse" :
+      color.includes("red") || color.includes("rose") ? "bg-red-50 text-red-600 border-red-100" :
       color.includes("indigo") ? "bg-indigo-50 text-indigo-600 border-indigo-100" :
       color.includes("amber") ? "bg-amber-50 text-amber-600 border-amber-100" :
       color.includes("cyan") ? "bg-cyan-50 text-cyan-600 border-cyan-100" :
@@ -682,11 +731,30 @@ function SummaryItemRow({ label, value, sub, color }: { label: string; value: st
   return (
     <div className="flex items-center justify-between gap-4 p-3.5 rounded-2xl border border-slate-100 hover:border-slate-200 transition-all hover:bg-slate-50/80 group">
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-bold text-slate-800 group-hover:text-slate-900 whitespace-normal leading-snug">
-          {capitalizeSentence(label)}
+        <p className="text-sm font-semibold text-slate-800 group-hover:text-slate-900 whitespace-normal leading-snug">
+          {rawLabel ? label : capitalizeSentence(label)}
         </p>
-        {displaySub && (
-          <p className="text-[10px] font-bold text-slate-400 mt-1 flex items-center gap-1 flex-wrap whitespace-normal">
+        
+        {(techName || dateString) ? (
+          <div className="flex text-xs text-slate-705 font-bold gap-4 mt-1.5 flex-wrap">
+            {dateString && (
+              <span className="flex items-center gap-1.5 shrink-0 leading-none">
+                <Calendar size={12} className="text-blue-600 opacity-100 shrink-0" />
+                {dateString.includes('/') ? (() => {
+                  const [d, m, y] = dateString.split('/');
+                  return formatDateSpanish(new Date(Number(y), Number(m) - 1, Number(d)), 'dd MMM').toUpperCase();
+                })() : dateString}
+              </span>
+            )}
+            {techName && (
+              <span className="flex items-center gap-1.5 whitespace-normal leading-none max-w-full truncate">
+                <User size={12} className="text-slate-600 opacity-100 shrink-0" />
+                {rawTechName ? techName : capitalizeSentence(techName)}
+              </span>
+            )}
+          </div>
+        ) : displaySub && (
+          <p className="text-[10px] font-bold text-slate-505 mt-1 flex items-center gap-1 flex-wrap whitespace-normal">
             {displaySub}
           </p>
         )}
@@ -696,6 +764,52 @@ function SummaryItemRow({ label, value, sub, color }: { label: string; value: st
           {value}
         </div>
       )}
+    </div>
+  );
+}
+
+export const formatearExcesoTiempo = (totalMinutos: number): string => {
+  const horas = Math.floor(totalMinutos / 60);
+  const minutos = Math.round(totalMinutos % 60);
+
+  if (minutos === 0) {
+    return `${horas}h`;
+  }
+  
+  return `${horas}h ${minutos}min`;
+};
+
+function DailyExcessRow({ daily }: { daily: { dayFormatted: string; totalHours: number; activityTitle: string } }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = daily.activityTitle && daily.activityTitle.length > 35;
+
+  return (
+    <div className="py-2.5 first:pt-1 last:pb-1 flex items-start justify-between gap-4 text-[11px] font-bold text-slate-500">
+      <div className="flex-1 min-w-0">
+        <span className="flex items-center gap-2 font-bold text-slate-800">
+          <span className="text-rose-400 shrink-0 opacity-70">•</span>
+          <span>{daily.dayFormatted}</span>
+        </span>
+        {daily.activityTitle && (
+          <div className="mt-1 pl-3.5 text-[10.5px] font-medium text-slate-500 leading-normal">
+            <p className={expanded ? "whitespace-normal text-slate-600" : "line-clamp-1 text-slate-500"}>
+              {daily.activityTitle}
+              {isLong && (
+                <button
+                  type="button"
+                  onClick={() => setExpanded(!expanded)}
+                  className="text-[10px] text-brand-blue font-bold hover:underline inline ml-1 cursor-pointer transition-all active:scale-95 whitespace-nowrap focus:outline-none"
+                >
+                  {expanded ? "ver menos" : "ver más..."}
+                </button>
+              )}
+            </p>
+          </div>
+        )}
+      </div>
+      <span className="px-2 py-0.5 bg-red-50 border border-red-100 rounded text-[10px] font-bold text-red-600 uppercase tracking-wider whitespace-nowrap self-start mt-0.5">
+        EXCESO DIARIO: <span className="lowercase">{formatearExcesoTiempo(Math.round(daily.totalHours * 60))}</span>
+      </span>
     </div>
   );
 }
@@ -717,26 +831,7 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
       if (typeof a.date.toDate === 'function') {
         return a.date.toDate();
       }
-      if (a.date instanceof Date) {
-        return a.date;
-      }
-      const dateVal = a.date as any;
-      if (dateVal && dateVal.seconds !== undefined) {
-        return new Date(dateVal.seconds * 1000);
-      }
-      if (typeof dateVal === 'string') {
-        if (dateVal.includes('-')) {
-          const parts = dateVal.split('T')[0].split('-');
-          if (parts.length === 3) {
-            return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-          }
-        }
-      }
-      const parsed = new Date(dateVal);
-      if (isNaN(parsed.getTime())) {
-        return new Date();
-      }
-      return parsed;
+      return new Date(a.date as any);
     } catch {
       return new Date();
     }
@@ -951,19 +1046,25 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           icon: ClipboardList,
           color: "text-brand-blue",
           bg: "bg-brand-blue/10",
-          items: activities.slice(0, 10).map(a => ({
+          items: activities.map(a => ({
             label: a.title,
             value: formatActivityDate(a),
-            sub: a.incidentNumber || 'S/N'
+            sub: a.incidentNumber || 'S/N',
+            techName: a.participants && a.participants.length > 0 ? a.participants.map(p => p).join(', ') : a.technicianName,
+            dateString: formatActivityDate(a)
           })),
           extra: (
             <div className="mt-4 pt-4 border-t border-slate-100">
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Líderes de Campo</p>
-              <div className="space-y-2">
-                {topTechs.map((t) => (
-                  <div key={`top-leader-${t.name}`} className="flex justify-between items-center bg-slate-50 p-2 rounded-lg">
-                    <span className="text-xs font-bold text-slate-700">{t.name}</span>
-                    <span className="text-xs font-black text-brand-blue">{t.labores}</span>
+              <div className="flex flex-col gap-2">
+                {topTechs.map((tecnico) => (
+                  <div key={`top-leader-${tecnico.name}`} className="flex items-center justify-between gap-4 p-3 bg-slate-50 border border-slate-100 rounded-xl transition-all">
+                    <span className="font-semibold text-slate-700 text-xs sm:text-sm whitespace-normal leading-tight min-w-0 flex-1">
+                      {tecnico.nombreCompleto || tecnico.name}
+                    </span>
+                    <span className="font-bold text-[#004a99] bg-blue-50 px-2.5 py-1 rounded-lg text-xs shrink-0 select-none">
+                      {tecnico.labores} {tecnico.labores === 1 ? 'Labor' : 'Labores'}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -971,7 +1072,7 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           )
         };
       case 'st':
-        const stActivities = activities.filter(a => (a.overtimeHours || 0) > 0).slice(0, 10);
+        const stActivities = activities.filter(a => (a.overtimeHours || 0) > 0);
         return {
           title: "ST Acumulado",
           icon: Clock,
@@ -980,12 +1081,14 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           items: stActivities.map(a => ({
             label: a.title,
             value: `+${formatHours(a.overtimeHours!)}`,
-            sub: formatActivityDate(a)
+            sub: formatActivityDate(a),
+            techName: a.participants && a.participants.length > 0 ? a.participants.map((p: string) => p.split(' ')[0]).join(', ') : a.technicianName,
+            dateString: formatActivityDate(a)
           })),
           extra: <p className="mt-4 text-[10px] text-center text-slate-400 font-medium">Mostrando las últimas incidencias con tiempo extra productivo.</p>
         };
       case 'df':
-        const dfActivities = activities.filter(a => (a.overtimeHours || 0) < 0).slice(0, 10);
+        const dfActivities = activities.filter(a => (a.overtimeHours || 0) < 0);
         return {
           title: "Déficits Acumulados",
           icon: AlertTriangle,
@@ -994,12 +1097,14 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           items: dfActivities.map(a => ({
             label: a.title,
             value: formatHours(a.overtimeHours!),
-            sub: formatActivityDate(a)
+            sub: formatActivityDate(a),
+            techName: a.participants && a.participants.length > 0 ? a.participants.map((p: string) => p.split(' ')[0]).join(', ') : a.technicianName,
+            dateString: formatActivityDate(a)
           })),
           extra: <p className="mt-4 text-[10px] text-center text-slate-400 font-medium">Registro de labores con tiempo por debajo del estándar de 8h.</p>
         };
       case 'viaticos':
-        const vActivities = activities.filter(a => a.hasPerDiem).slice(0, 10);
+        const vActivities = activities.filter(a => a.hasPerDiem);
         const total = activities.reduce((acc, a) => acc + (Number(a.perDiemAmount) || 0), 0);
         return {
           title: "Resumen Viáticos",
@@ -1009,7 +1114,9 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           items: vActivities.map(a => ({
             label: a.title,
             value: `Bs. ${Number(a.perDiemAmount || 0).toFixed(2)}`,
-            sub: formatActivityDate(a)
+            sub: formatActivityDate(a),
+            techName: a.participants && a.participants.length > 0 ? a.participants.map((p: string) => p.split(' ')[0]).join(', ') : a.technicianName,
+            dateString: formatActivityDate(a)
           })),
           extra: (
             <div className="mt-4 p-3 bg-amber-500/10 rounded-xl border border-amber-500/20 text-center">
@@ -1024,15 +1131,17 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           icon: Timer,
           color: "text-cyan-500",
           bg: "bg-cyan-50",
-          items: activities.slice(0, 10).map(a => ({
+          items: activities.map(a => ({
             label: a.title,
             value: formatHours(a.totalHours || 0),
-            sub: formatActivityDate(a)
+            sub: formatActivityDate(a),
+            techName: a.participants && a.participants.length > 0 ? a.participants.map((p: string) => p.split(' ')[0]).join(', ') : a.technicianName,
+            dateString: formatActivityDate(a)
           })),
           extra: <p className="mt-4 text-[10px] text-center text-slate-400 font-medium">Refleja el tiempo promedio que toma cada actividad registrada.</p>
         };
       case 'documentos':
-        const docActivities = activities.filter(a => a.documentation === 'SI').slice(0, 10);
+        const docActivities = activities.filter(a => a.documentation === 'SI');
         return {
           title: "Labores Documentadas",
           icon: FileText,
@@ -1041,7 +1150,9 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           items: docActivities.map(a => ({
             label: a.title,
             value: "Documentado",
-            sub: formatActivityDate(a)
+            sub: formatActivityDate(a),
+            techName: a.participants && a.participants.length > 0 ? a.participants.map((p: string) => p.split(' ')[0]).join(', ') : a.technicianName,
+            dateString: formatActivityDate(a)
           })),
           extra: (
             <div className="mt-4 p-3 bg-teal-50 rounded-xl border border-teal-100 flex justify-around">
@@ -1062,8 +1173,15 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
         const uniqueFleets: string[] = [];
         
         const normalizeFleet = (n: string) => n.toLowerCase().replace(/[\s\-_]/g, '');
+        const isExcludedFleetCase = (f: string) => {
+          if (!f) return true;
+          const upper = f.trim().toUpperCase();
+          const excluded = ['S/V', 'NINGUNO', 'NINGUNA', 'N/A', 'SIN VEHICULO', 'SIN VEHÍCULO', 'NONE', 'S/D', 'S/N'];
+          return excluded.includes(upper) || upper === '' || upper === '-';
+        };
+
         activities.forEach(a => {
-          if (a.fleet && a.fleet !== 'N/A' && a.fleet.trim() !== '') {
+          if (a.fleet && !isExcludedFleetCase(a.fleet)) {
             const normActivityFleet = normalizeFleet(a.fleet);
             
             // Find if we already have this fleet in our list (using normalized comparison)
@@ -1201,7 +1319,7 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
                           </span>
                           {tech.hasWeeklyExcess && (
                             <span className="inline-flex items-center gap-1 bg-red-50 text-red-700 text-[10px] sm:text-[11px] font-black px-2.5 py-0.5 rounded-md border border-red-100/80 uppercase tracking-wide">
-                              ⚠️ Exceso Semanal: {formatHours(tech.weeklyOvertime)} extras
+                              ⚠️ Exceso Semanal: <span className="lowercase">{formatearExcesoTiempo(Math.round(tech.weeklyOvertime * 60))}</span> extras
                             </span>
                           )}
                         </div>
@@ -1210,15 +1328,7 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
                         {tech.dailyExcesses.length > 0 && (
                           <div className="pl-3.5 space-y-1 border-l-2 border-slate-200">
                             {tech.dailyExcesses.map((daily, idx) => (
-                              <div key={`daily-${idx}`} className="flex items-center justify-between gap-2 text-[11px] font-bold text-slate-500">
-                                <span className="flex items-center gap-2">
-                                  <span className="text-rose-400 shrink-0 opacity-70">•</span>
-                                  <span>{daily.dayFormatted}</span>
-                                </span>
-                                <span className="text-[9px] font-black text-rose-500 bg-rose-50 px-2 py-0.5 rounded border border-rose-100/55 uppercase tracking-wider whitespace-nowrap">
-                                  Exceso diario: {formatHours(daily.totalHours).toUpperCase()}
-                                </span>
-                              </div>
+                              <DailyExcessRow key={`daily-${idx}`} daily={daily} />
                             ))}
                           </div>
                         )}
@@ -1247,10 +1357,16 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
                 const uniqueFleets = new Set<string>();
                 
                 const normalizeFleet = (n: string) => n.toLowerCase().replace(/[\s\-_]/g, '');
+                const isExcludedFleetCaseInner = (f: string) => {
+                  if (!f) return true;
+                  const upper = f.trim().toUpperCase();
+                  const excluded = ['S/V', 'NINGUNO', 'NINGUNA', 'N/A', 'SIN VEHICULO', 'SIN VEHÍCULO', 'NONE', 'S/D', 'S/N'];
+                  return excluded.includes(upper) || upper === '' || upper === '-';
+                };
                 const normToOriginal: Record<string, string> = {};
 
                 activities.forEach(a => {
-                  if (a.fleet && a.fleet !== 'N/A' && a.fleet.trim() !== '') {
+                  if (a.fleet && !isExcludedFleetCaseInner(a.fleet)) {
                     totalServicios++;
                     const norm = normalizeFleet(a.fleet);
                     if (!normToOriginal[norm]) {
@@ -1283,6 +1399,8 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
                     value={item.value}
                     sub={item.sub}
                     color={content.color}
+                    rawLabel={type === 'personal'}
+                    rawTechName={true}
                   />
                 ))}
                 {content.items.length === 0 && (

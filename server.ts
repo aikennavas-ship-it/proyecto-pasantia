@@ -29,6 +29,65 @@ async function startServer() {
     res.json({ valid: true, message: "Validación de labor exitosa" });
   });
 
+  app.post("/api/activities/save", async (req, res) => {
+    try {
+      const { id, titulo, incidente, flota, region, fecha, manejo, codigo, causa, horas, viatico, tecnicos } = req.body;
+
+      // 1. Validaciones básicas de integridad en el Servidor
+      if (!titulo || !incidente || !fecha || !causa || !tecnicos || tecnicos.length === 0) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Faltan campos obligatorios para procesar el reporte de actividad.'
+        });
+      }
+
+      // 2. Normalización de campos opcionales (Flota y Chofer) para evitar nulos
+      const flotaNormalizada = flota ? flota.trim() : 'S/V';
+      const manejoNormalizado = (flotaNormalizada === 'S/V' || !manejo) ? 'Ninguno' : manejo.trim();
+
+      const datosActividad = {
+        titulo: titulo.trim(),
+        incidente: incidente.trim(),
+        flota: flotaNormalizada,
+        region,
+        fecha,
+        manejo: manejoNormalizado,
+        codigo,
+        causa: causa.trim(),
+        horas,
+        viatico,
+        tecnicos,
+        updatedAt: new Date()
+      };
+
+      if (id) {
+        // FLUJO EDICIÓN: Actualizar registro existente en base de datos
+        // NOTA: Para implementar la db real aquí: await db.collection('activities').doc(id).update(datosActividad);
+        
+        return res.status(200).json({
+          status: 'success',
+          message: 'Actividad actualizada exitosamente.'
+        });
+      } else {
+        // FLUJO CREACIÓN: Agregar nuevo registro
+        // NOTA: Para implementar db real aquí: const nuevoDoc = await db.collection('activities').add({ ...datosActividad, createdAt: new Date() });
+
+        return res.status(201).json({
+          status: 'success',
+          message: 'Nueva actividad registrada exitosamente.',
+          id: 'nuevo-id' // nuevoDoc.id
+        });
+      }
+
+    } catch (error) {
+      console.error("Error en el guardado de actividad:", error);
+      return res.status(500).json({
+        status: 'error',
+        message: 'Fallo interno en el servidor de base de datos.'
+      });
+    }
+  });
+
   app.get("/api/reports/config", (req, res) => {
     res.json({
       central: "4357",

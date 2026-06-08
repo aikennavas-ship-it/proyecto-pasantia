@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Activity, UserProfile, Technician } from '../../../types';
-import { Clock, DollarSign, Calendar, MapPin, CheckCircle, XCircle, AlertCircle, Users, Truck } from 'lucide-react';
+import { Clock, Calendar, MapPin, CheckCircle, XCircle, AlertCircle, Users, Truck } from 'lucide-react';
 import { parseISO, startOfWeek, endOfWeek, isWithinInterval } from 'date-fns';
 import { getActivityBounds, calculateRealHours } from '../../../lib/utils';
 
@@ -8,6 +8,32 @@ interface TechHistoryViewProps {
   activities: Activity[];
   user: UserProfile | null;
   onEdit?: (activity: Activity) => void;
+}
+
+export function DescripcionExpandible({ texto, limite = 90 }: { texto: string; limite?: number }) {
+  const [expandido, setExpandido] = React.useState(false);
+
+  if (!texto || texto.length <= limite) {
+    return <p className="text-xs font-medium text-slate-500 leading-relaxed">{texto}</p>;
+  }
+
+  const textoTruncado = `${texto.slice(0, limite)}...`;
+
+  return (
+    <p className="text-xs font-medium text-slate-500 leading-relaxed transition-all duration-200">
+      {expandido ? texto : textoTruncado}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation(); // Evita disparar clics accidentales en la tarjeta
+          setExpandido(!expandido);
+        }}
+        className="text-blue-600 font-semibold italic hover:underline ml-1 focus:outline-none inline-block"
+      >
+        {expandido ? 'ver menos' : 'ver más...'}
+      </button>
+    </p>
+  );
 }
 
 export default function TechHistoryView({ activities, user, onEdit }: TechHistoryViewProps) {
@@ -74,22 +100,24 @@ export default function TechHistoryView({ activities, user, onEdit }: TechHistor
 
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="bg-gradient-to-br from-white to-slate-50/80 rounded-3xl p-6 md:p-8 shadow-sm border border-slate-200/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
+    <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* CABECERA "MI HISTORIAL DE JORNADAS" EN ANCHO COMPLETO (100% de ancho) */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 w-full relative overflow-hidden">
         {/* Decorativo de fondo */}
-        <div className="absolute top-0 right-0 w-64 h-64 bg-brand-blue/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
+        <div className="absolute top-0 right-0 w-32 h-32 bg-brand-blue/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
         
-        <div className="relative z-10 space-y-1.5">
-          <h2 className="text-2xl lg:text-3xl font-display font-black text-slate-900 tracking-tight uppercase">Mi Historial de Jornadas</h2>
-          <p className="text-sm font-medium text-slate-500">Consulta el desglose de horas, sobretiempos y viáticos asociados a tus participaciones.</p>
+        <div className="relative z-10 space-y-1">
+          <h1 className="text-xl font-black text-slate-800 tracking-tight uppercase">MI HISTORIAL DE JORNADAS</h1>
+          <p className="text-xs text-slate-400 font-medium">Consulta el desglose de horas, sobretiempos y viáticos asociados a tus participaciones del período.</p>
         </div>
         
-        <div className="flex flex-row items-center gap-3 w-full md:w-auto relative z-10 bg-white/60 p-2 rounded-2xl border border-slate-100 shadow-sm backdrop-blur-sm">
-          <div className="flex flex-col min-w-[120px] flex-1 md:flex-initial relative">
+        {/* Selectores de Período compactos en la extrema derecha */}
+        <div className="flex gap-2 shrink-0 relative z-10">
+          <div className="flex flex-col relative min-w-[100px]">
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              className="appearance-none h-11 pl-4 pr-10 rounded-xl border-none bg-slate-100/80 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-brand-blue/30 transition-all cursor-pointer w-full"
+              className="appearance-none h-9 pl-3 pr-8 rounded-lg border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-brand-blue/20 transition-all cursor-pointer w-full"
             >
               {months
                 .map((month, index) => ({ name: month, index }))
@@ -104,13 +132,12 @@ export default function TechHistoryView({ activities, user, onEdit }: TechHistor
                 ))
               }
             </select>
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
             </div>
-            <span className="absolute -top-2 left-3 bg-white px-1.5 text-[9px] font-black text-brand-blue uppercase tracking-widest rounded-sm border border-slate-100 shadow-sm">Mes</span>
           </div>
           
-          <div className="flex flex-col min-w-[100px] flex-1 md:flex-initial relative">
+          <div className="flex flex-col relative min-w-[80px]">
             <select
               value={selectedYear}
               onChange={(e) => {
@@ -122,40 +149,17 @@ export default function TechHistoryView({ activities, user, onEdit }: TechHistor
                   }
                 }
               }}
-              className="appearance-none h-11 pl-4 pr-10 rounded-xl border-none bg-slate-100/80 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-brand-blue/30 transition-all cursor-pointer w-full"
+              className="appearance-none h-9 pl-3 pr-8 rounded-lg border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-brand-blue/20 transition-all cursor-pointer w-full"
             >
               {years.map(year => (
                 <option key={year} value={year}>{year}</option>
               ))}
             </select>
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
             </div>
-            <span className="absolute -top-2 left-3 bg-white px-1.5 text-[9px] font-black text-brand-blue uppercase tracking-widest rounded-sm border border-slate-100 shadow-sm">Año</span>
           </div>
         </div>
-      </div>
-
-      {/* Relleno de Control Semanal LOTTT */}
-      <div className={`rounded-2xl p-4 md:p-5 flex items-center justify-between shadow-sm border ${weeklyOvertimeTracker >= 10 ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'}`}>
-         <div className="flex items-center gap-4">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${weeklyOvertimeTracker >= 10 ? 'bg-red-100/80 text-red-600' : 'bg-slate-200/50 text-slate-500'}`}>
-               <Clock size={20} strokeWidth={2.5}/>
-            </div>
-            <div>
-               <h4 className={`text-sm font-black uppercase tracking-tight ${weeklyOvertimeTracker >= 10 ? 'text-red-700' : 'text-slate-800'}`}>
-                 {weeklyOvertimeTracker >= 10 ? '⚠️ Límite de sobretiempo alcanzado esta semana' : 'Control Semanal de Horas Extras'}
-               </h4>
-               <p className={`text-xs font-medium mt-0.5 ${weeklyOvertimeTracker >= 10 ? 'text-red-600/80' : 'text-slate-500'}`}>
-                 Progreso legal de la semana en curso (Lunes - Domingo)
-               </p>
-            </div>
-         </div>
-         <div className="text-right">
-             <div className="text-xl font-black text-slate-900 tracking-tight">
-               {weeklyOvertimeTracker.toFixed(1)}<span className="text-base text-slate-400 font-bold ml-0.5">/ 10h</span>
-             </div>
-         </div>
       </div>
 
       <div className="space-y-4">
@@ -204,7 +208,7 @@ export default function TechHistoryView({ activities, user, onEdit }: TechHistor
 
                   <div className="mb-5 flex-1 p-2">
                     <h3 className="text-base font-black text-slate-800 leading-tight mb-2">{activity.title}</h3>
-                    <p className="text-xs font-medium text-slate-500 line-clamp-2 leading-relaxed">{activity.description}</p>
+                    <DescripcionExpandible texto={activity.description || ''} />
                   </div>
 
                   <div className="space-y-4">
@@ -225,7 +229,10 @@ export default function TechHistoryView({ activities, user, onEdit }: TechHistor
                         <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1 relative after:content-[''] after:absolute after:-bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-4 after:h-0.5 after:bg-slate-200">Viático</span>
                         <div className="text-sm md:text-base font-black text-brand-blue mt-1">
                           {activity.perDiemAmount && activity.perDiemAmount > 0 ? (
-                             <span className="flex items-center justify-center gap-0.5"><DollarSign size={10} className="-mr-0.5"/>{activity.perDiemAmount.toFixed(0)}</span>
+                             <span className="flex items-center justify-center gap-0.5">
+                               <span className="text-[10px] font-extrabold text-slate-400 mr-0.5">Bs.</span>
+                               {activity.perDiemAmount.toFixed(0)}
+                             </span>
                           ) : (
                              <span className="text-slate-400">N/A</span>
                           )}

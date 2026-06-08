@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Clock, Calendar, Shield, ChevronDown, ChevronUp, User } from 'lucide-react';
 import { Activity } from '../../../types';
 import { cn, formatDate } from '../../../lib/utils';
-import { formatHours } from './ActivityForm';
 
 interface ActivityCardProps {
   activity: Activity;
@@ -75,7 +74,7 @@ export default function ActivityCard({ activity, onEdit }: ActivityCardProps) {
         </div>
 
         {/* Metrics Section: Visually Differentiated */}
-        <div className="mt-6 grid grid-cols-2 gap-3 p-4 bg-slate-50/50 rounded-2xl border border-slate-100 group-hover:bg-white group-hover:border-brand-blue/10 transition-all duration-300">
+        <div className="mt-6 p-4 bg-slate-50/50 rounded-2xl border border-slate-100 group-hover:bg-white group-hover:border-brand-blue/10 transition-all duration-300">
           <div className="space-y-1">
             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Horario Central</span>
             <div className="flex flex-col gap-1 text-[10px] font-bold text-slate-700 font-mono">
@@ -87,28 +86,6 @@ export default function ActivityCard({ activity, onEdit }: ActivityCardProps) {
                 <Clock size={12} className="text-brand-blue shrink-0" />
                 <span>PM: {activity.startTimeAfternoon || '12:45'} - {activity.endTimeAfternoon || activity.endTime || '16:00'}</span>
               </div>
-            </div>
-          </div>
-          <div className="space-y-1 border-l border-slate-200 pl-3">
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Productividad</span>
-            <div className="flex flex-col gap-1.5 justify-center h-full">
-              {activity.overtimeHours && activity.overtimeHours !== 0 ? (
-                <span className={cn(
-                  "text-[10px] font-black px-2 py-0.5 rounded-md shadow-sm w-max whitespace-nowrap",
-                  activity.overtimeHours > 0
-                    ? "text-brand-blue bg-brand-blue/10 ring-1 ring-brand-blue/20"
-                    : "text-red-500 bg-red-50 ring-1 ring-red-100"
-                )}>
-                  {activity.overtimeHours > 0 ? '+' : ''}{formatHours(activity.overtimeHours)} {activity.overtimeHours > 0 ? 'S.T' : 'D.F'}
-                </span>
-              ) : (
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter w-max">Normal J-8</span>
-              )}
-              {activity.hasPerDiem && (
-                <span className="text-[11px] font-black text-amber-700 bg-amber-100/50 border border-amber-200 px-2 py-0.5 rounded-md shadow-sm w-max whitespace-nowrap">
-                  Viático: Bs. {Number(activity.perDiemAmount || 0).toFixed(2)}
-                </span>
-              )}
             </div>
           </div>
         </div>
