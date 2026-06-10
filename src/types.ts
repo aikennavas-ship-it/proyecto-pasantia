@@ -67,7 +67,9 @@ export interface SystemRequest {
 
 export interface Technician {
   id: string;
-  name: string;
+  name: string; // Keep name as the combined one or fallback
+  nombres?: string;
+  apellidos?: string;
   employeeId: string;
   email?: string;
   role?: 'admin' | 'supervisor' | 'tecnico';

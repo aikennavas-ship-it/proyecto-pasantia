@@ -25,6 +25,119 @@ const formatSentenceCase = (text: string) => {
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
 
+const normalizarRol = (rolOriginal: any): 'tecnico' | 'supervisor' | 'admin' => {
+  if (!rolOriginal) return 'tecnico';
+  const rolClean = String(rolOriginal).trim().toLowerCase();
+  if (rolClean.includes('admin')) return 'admin';
+  if (rolClean.includes('supervisor') || rolClean.includes('super')) return 'supervisor';
+  return 'tecnico';
+};
+
+// 1. Nombres y Apellidos: Máximo 2 palabras, solo letras, auto-capitalización
+const handleNameInput = (value: string): string => {
+  const sanitized = value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, '');
+  const singlSpaced = sanitized.replace(/\s+/g, ' ');
+  const words = singlSpaced.split(' ');
+  
+  if (words.length > 2) {
+    words.length = 2;
+  }
+  
+  const formattedWords = words.map(word => {
+    if (!word) return '';
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  });
+  
+  let result = formattedWords.join(' ');
+  if (value.endsWith(' ') && words.length === 1 && words[0] !== '') {
+    result += ' ';
+  }
+  return result;
+};
+
+// 2. Cédula: Prefijo de "V-" y máximo 8 números
+const handleCedulaInput = (value: string): string => {
+  let cleaned = value.toUpperCase();
+  if (!cleaned.startsWith('V-')) {
+    cleaned = 'V-' + cleaned.replace(/[^0-9]/g, '');
+  }
+  const numericPart = cleaned.substring(2).replace(/[^0-9]/g, '').slice(0, 8);
+  return `V-${numericPart}`;
+};
+
+// 3. Teléfono: Formato 0414-1234567
+const handleTelefonoInput = (value: string): string => {
+  const sanitized = value.replace(/[^0-9]/g, '');
+  let formatted = sanitized;
+  if (sanitized.length > 4) {
+    formatted = sanitized.slice(0, 4) + '-' + sanitized.slice(4, 11);
+  }
+  return formatted.slice(0, 12);
+};
+
+// 4. Cargo: Auto-capitalización exceptuando conectores
+const handleCargoInput = (value: string): string => {
+  const sanitized = value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]/g, '').replace(/\s+/g, ' ');
+  const conectores = ["de", "en", "con", "y", "o", "a", "para", "por", "la", "el", "los", "las", "del"];
+  const words = sanitized.split(' ');
+  
+  const formatted = words.map((word, index) => {
+    if (!word) return '';
+    const lowerWord = word.toLowerCase();
+    if (index > 0 && conectores.includes(lowerWord)) {
+      return lowerWord;
+    }
+    return lowerWord.charAt(0).toUpperCase() + lowerWord.slice(1);
+  });
+  
+  let result = formatted.join(' ');
+  if (value.endsWith(' ') && !result.endsWith(' ')) {
+    result += ' ';
+  }
+  return result;
+};
+
+// 5. Departamento: Mayúsculas sin números
+const handleDepartamentoInput = (value: string): string => {
+  return value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]/g, '').toUpperCase();
+};
+
+// 6. Validaciones de la dotación
+const validarDotacion = (botas: string, camisa: string, pantalon: string) => {
+  const tallasCamisaValidas = ["SS", "S", "M", "L", "XL", "XXL", "XXXL", "N/R", "S/N", ""];
+  
+  const b = botas.trim().toUpperCase();
+  const c = camisa.trim().toUpperCase();
+  const p = pantalon.trim().toUpperCase();
+  
+  const tBotas = parseInt(b, 10);
+  const tPantalon = parseInt(p, 10);
+  
+  const botasValidas = b === "" || b === "N/R" || b === "S/N" || (!isNaN(tBotas) && tBotas >= 35 && tBotas <= 48);
+  const camisaValida = c === "" || tallasCamisaValidas.includes(c);
+  const pantalonValido = p === "" || p === "N/R" || p === "S/N" || (!isNaN(tPantalon) && tPantalon >= 26 && tPantalon <= 48);
+  
+  return {
+    valido: botasValidas && camisaValida && pantalonValido,
+    errores: {
+      botas: !botasValidas ? "Talla de botas debe ser un número entero entre 35 y 48, o 'N/R'." : null,
+      camisa: !camisaValida ? "Talla de camisa no es válida (SS, S, M, L, XL, XXL, XXXL, N/R)." : null,
+      pantalon: !pantalonValido ? "Talla de pantalón debe ser un número entero entre 26 y 48, o 'N/R'." : null
+    }
+  };
+};
+
+const getFechaIngresoLimits = (fechaNacimientoSeleccionada: string) => {
+  const todayStr = "2026-06-09";
+  if (!fechaNacimientoSeleccionada) {
+    return { min: "1946-01-01", max: todayStr };
+  }
+  const nacDate = new Date(fechaNacimientoSeleccionada);
+  const minIngresoDate = new Date(nacDate.getFullYear() + 18, nacDate.getMonth(), nacDate.getDate())
+    .toISOString().split('T')[0];
+  return { min: minIngresoDate, max: todayStr };
+};
+
 export default function TechnicianForm({ onClose, onSubmit, initialData, technicians }: TechnicianFormProps) {
   const predefinedStatuses = ['activo', 'inactivo', 'baja', 'reposo', 'vacaciones'];
   
@@ -33,8 +146,8 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
   const isCustomStatus = !predefinedStatuses.includes(initialStatusVal);
 
   const parts = (initialData?.name || '').split(' ');
-  const initFirstName = parts.length > 1 ? parts.slice(0, Math.ceil(parts.length / 2)).join(' ') : parts[0] || '';
-  const initLastName = parts.length > 1 ? parts.slice(Math.ceil(parts.length / 2)).join(' ') : '';
+  const initFirstName = initialData?.nombres || (parts.length > 1 ? parts.slice(0, Math.ceil(parts.length / 2)).join(' ') : parts[0] || '');
+  const initLastName = initialData?.apellidos || (parts.length > 1 ? parts.slice(Math.ceil(parts.length / 2)).join(' ') : '');
 
   const [data, setData] = React.useState({
     firstName: initFirstName,
@@ -47,7 +160,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
     status: isCustomStatus ? 'otro' : initialStatusVal,
     customStatus: isCustomStatus ? (initialData?.status || '') : '',
     email: initialData?.email || '',
-    systemRole: initialData?.role || 'tecnico',
+    systemRole: normalizarRol(initialData?.role),
     password: '',
     tallaBotas: initialData?.tallaBotas || '',
     tallaCamisa: initialData?.tallaCamisa || '',
@@ -61,6 +174,13 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = React.useState(false);
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+
+  const birthLimits = React.useMemo(() => {
+    const today = new Date("2026-06-09");
+    const maxDate = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate()).toISOString().split('T')[0];
+    const minDate = new Date(today.getFullYear() - 80, today.getMonth(), today.getDate()).toISOString().split('T')[0];
+    return { min: minDate, max: maxDate };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,6 +222,43 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
       setErrorPrompt('Número de teléfono inválido. Debe tener 12 caracteres incluyendo un guión (Ej: 0414-1234567).');
       return;
     }
+
+    // Validation: Date of Birth constraints
+    if (data.fechaNacimiento < birthLimits.min || data.fechaNacimiento > birthLimits.max) {
+      setErrorPrompt('La fecha de nacimiento es inválida o el trabajador no está dentro de la edad laboral permitida (Debe ser mayor de 18 años y por debajo de 80 años).');
+      return;
+    }
+
+    // Validation: Date of Entry constraints
+    const ingresoLimits = getFechaIngresoLimits(data.fechaNacimiento);
+    if (data.fechaIngreso < ingresoLimits.min || data.fechaIngreso > ingresoLimits.max) {
+      const formatReadableDate = (f: string) => f.split('-').reverse().join('/');
+      setErrorPrompt(`La fecha de ingreso de la empresa no es coherente. Debe ser posterior a la mayoría de edad del trabajador y anterior a la fecha actual (Mínimo: ${formatReadableDate(ingresoLimits.min)} - Máximo: ${formatReadableDate(ingresoLimits.max)}).`);
+      return;
+    }
+
+    // Validation: Direction address checks
+    const cleanDireccion = data.direccion.replace(/\s+/g, ' ').trim();
+    if (cleanDireccion.length < 15) {
+      setErrorPrompt('La dirección de habitación debe tener al menos 15 caracteres (Ej: Av. Bolívar, Edf. CANTV, Maracay).');
+      return;
+    }
+    if (cleanDireccion.length > 200) {
+      setErrorPrompt('La dirección de habitación excede el límite de 200 caracteres.');
+      return;
+    }
+
+    // Validation: Dotation Uniform elements
+    const dotVal = validarDotacion(data.tallaBotas, data.tallaCamisa, data.tallaPantalon);
+    if (!dotVal.valido) {
+      const firstError = dotVal.errores.botas || dotVal.errores.camisa || dotVal.errores.pantalon;
+      setErrorPrompt(firstError || 'Error en las tallas de dotación.');
+      return;
+    }
+
+    const finalTallaBotas = data.tallaBotas.trim().toUpperCase() || 'N/R';
+    const finalTallaCamisa = data.tallaCamisa.trim().toUpperCase() || 'N/R';
+    const finalTallaPantalon = data.tallaPantalon.trim().toUpperCase() || 'N/R';
     
     // Validation: Password strength
     if (isNew || (!isNew && data.password)) {
@@ -136,6 +293,8 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
       setIsSubmitting(true);
       await onSubmit({
         name: fullName,
+        nombres: data.firstName.trim(),
+        apellidos: data.lastName.trim(),
         employeeId: data.employeeId,
         idCard: data.idCard,
         specialty: data.specialty,
@@ -143,14 +302,14 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
         phoneNumber: data.phoneNumber,
         status: finalStatus,
         email: data.email.toLowerCase().trim(),
-        role: data.systemRole,
+        role: normalizarRol(data.systemRole),
         password: data.password,
-        tallaBotas: data.tallaBotas.trim().toUpperCase(),
-        tallaCamisa: data.tallaCamisa.trim().toUpperCase(),
-        tallaPantalon: data.tallaPantalon.trim().toUpperCase(),
+        tallaBotas: finalTallaBotas,
+        tallaCamisa: finalTallaCamisa,
+        tallaPantalon: finalTallaPantalon,
         fechaNacimiento: data.fechaNacimiento,
         fechaIngreso: data.fechaIngreso,
-        direccion: data.direccion.trim()
+        direccion: cleanDireccion
       });
       // onClose is handled by the parent if successful, but we can also call it here
       onClose();
@@ -350,6 +509,8 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
                     onChange={e => setData({ ...data, fechaNacimiento: e.target.value })}
                     className="input-field"
                     required
+                    min={birthLimits.min}
+                    max={birthLimits.max}
                   />
                 </div>
 
@@ -365,6 +526,8 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
                     onChange={e => setData({ ...data, fechaIngreso: e.target.value })}
                     className="input-field"
                     required
+                    min={getFechaIngresoLimits(data.fechaNacimiento).min}
+                    max={getFechaIngresoLimits(data.fechaNacimiento).max}
                   />
                 </div>
 
@@ -385,12 +548,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
                     className="input-field"
                     placeholder="Pedro José"
                     value={data.firstName}
-                    onChange={e => {
-                      const value = e.target.value;
-                      if (/^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]*$/.test(value)) {
-                        setData({ ...data, firstName: formatCapitalized(value) });
-                      }
-                    }}
+                    onChange={e => setData({ ...data, firstName: handleNameInput(e.target.value) })}
                   />
                 </div>
                 <div className="space-y-1">
@@ -400,12 +558,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
                     className="input-field"
                     placeholder="Pérez García"
                     value={data.lastName}
-                    onChange={e => {
-                      const value = e.target.value;
-                      if (/^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]*$/.test(value)) {
-                        setData({ ...data, lastName: formatCapitalized(value) });
-                      }
-                    }}
+                    onChange={e => setData({ ...data, lastName: handleNameInput(e.target.value) })}
                   />
                 </div>
               </div>
@@ -434,15 +587,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
                     className="input-field font-mono"
                     placeholder="V-12345678"
                     value={data.idCard}
-                    onChange={e => {
-                      let val = e.target.value.toUpperCase();
-                      const isForeigner = val.startsWith('E');
-                      const prefix = isForeigner ? 'E-' : 'V-';
-                      const cleanNumbers = val.replace(/[^\d]/g, '');
-                      const limitedNumbers = cleanNumbers.slice(0, 8);
-                      const formattedId = limitedNumbers ? `${prefix}${limitedNumbers}` : prefix;
-                      setData({ ...data, idCard: formattedId });
-                    }}
+                    onChange={e => setData({ ...data, idCard: handleCedulaInput(e.target.value) })}
                   />
                 </div>
               </div>
@@ -456,13 +601,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
                   className="input-field font-mono"
                   placeholder="0414-1234567"
                   value={data.phoneNumber}
-                  onChange={e => {
-                    let val = e.target.value.replace(/[^\d-]/g, '');
-                    if (val.length > 4 && !val.includes('-')) {
-                      val = val.slice(0,4) + '-' + val.slice(4);
-                    }
-                    setData({ ...data, phoneNumber: val });
-                  }}
+                  onChange={e => setData({ ...data, phoneNumber: handleTelefonoInput(e.target.value) })}
                 />
               </div>
 
@@ -474,13 +613,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
                   className="input-field"
                   placeholder="Programador, Soporte Técnico"
                   value={data.specialty}
-                  onChange={e => {
-                    let cleanValue = e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]/g, '');
-                    if (cleanValue.length > 0) {
-                      cleanValue = cleanValue.charAt(0).toUpperCase() + cleanValue.slice(1).toLowerCase();
-                    }
-                    setData({ ...data, specialty: cleanValue });
-                  }}
+                  onChange={e => setData({ ...data, specialty: handleCargoInput(e.target.value) })}
                 />
               </div>
 
@@ -492,10 +625,7 @@ export default function TechnicianForm({ onClose, onSubmit, initialData, technic
                   className="input-field uppercase"
                   placeholder="DATOS, TRANSMISION o SOPORTE"
                   value={data.department}
-                  onChange={e => {
-                    let cleanValue = e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]/g, '');
-                    setData({ ...data, department: cleanValue.toUpperCase() });
-                  }}
+                  onChange={e => setData({ ...data, department: handleDepartamentoInput(e.target.value) })}
                 />
               </div>
 

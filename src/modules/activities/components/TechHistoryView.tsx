@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Activity, UserProfile, Technician } from '../../../types';
 import { Clock, Calendar, MapPin, CheckCircle, XCircle, AlertCircle, Users, Truck } from 'lucide-react';
 import { parseISO, startOfWeek, endOfWeek, isWithinInterval } from 'date-fns';
-import { getActivityBounds, calculateRealHours } from '../../../lib/utils';
+import { getActivityBounds, calculateRealHours, formatDecimalHoursToHM, formatMinutesToHM, formatViaticoBolivares } from '../../../lib/utils';
 
 interface TechHistoryViewProps {
   activities: Activity[];
@@ -186,6 +186,9 @@ export default function TechHistoryView({ activities, user, onEdit }: TechHistor
               let realTotalHours = calculateRealHours(minStart, maxEnd, activity.hasPause === 'SI');
               const totalHours = activity.totalHours || realTotalHours || 0;
               
+              const minutosTrabajados = Math.round(totalHours * 60);
+              const jornadaEstandarMinutos = 450; // 7h 30min netos de la LOTTT
+              
               return (
                 <div 
                   key={activity.id} 
@@ -212,32 +215,62 @@ export default function TechHistoryView({ activities, user, onEdit }: TechHistor
                   </div>
 
                   <div className="space-y-4">
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="bg-slate-50 rounded-xl p-2 md:p-3 border border-slate-100 flex flex-col items-center justify-center text-center">
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1 relative after:content-[''] after:absolute after:-bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-4 after:h-0.5 after:bg-slate-200">Total</span>
-                        <div className="text-sm md:text-base font-black text-slate-800 mt-1">{totalHours.toFixed(1)}<span className="text-[10px] font-bold text-slate-400 ml-0.5">h</span></div>
-                      </div>
+                    {/* Grid de 3 Columnas: Horas, Extra/Déficit y Viáticos */}
+                    <div className="grid grid-cols-3 gap-3 my-4">
                       
-                      <div className="bg-emerald-50 rounded-xl p-2 md:p-3 border border-emerald-100 flex flex-col items-center justify-center text-center">
-                        <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mb-1 relative after:content-[''] after:absolute after:-bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-4 after:h-0.5 after:bg-emerald-200">Extra</span>
-                        <div className="text-sm md:text-base font-black text-emerald-700 mt-1">
-                          {(activity.overtimeHours || 0) > 0 ? `+${(activity.overtimeHours || 0).toFixed(1)}` : '0'}<span className="text-[10px] font-bold text-emerald-500/70 ml-0.5">h</span>
-                        </div>
+                      {/* Tarjeta 1: HORAS TOTALES (Formato XH Ymin) */}
+                      <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-3 text-center flex flex-col justify-center min-h-[75px]">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">TOTAL</span>
+                        <span className="text-xs font-black text-slate-700 mt-1">
+                          {formatDecimalHoursToHM(totalHours)}
+                        </span>
                       </div>
-                      
-                      <div className="bg-slate-50 rounded-xl p-2 md:p-3 border border-slate-100 flex flex-col items-center justify-center text-center relative overflow-hidden">
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1 relative after:content-[''] after:absolute after:-bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-4 after:h-0.5 after:bg-slate-200">Viático</span>
-                        <div className="text-sm md:text-base font-black text-brand-blue mt-1">
-                          {activity.perDiemAmount && activity.perDiemAmount > 0 ? (
-                             <span className="flex items-center justify-center gap-0.5">
-                               <span className="text-[10px] font-extrabold text-slate-400 mr-0.5">Bs.</span>
-                               {activity.perDiemAmount.toFixed(0)}
-                             </span>
-                          ) : (
-                             <span className="text-slate-400">N/A</span>
-                          )}
-                        </div>
+
+                      {/* Tarjeta 2: EXTRA / DÉFICIT DINÁMICO */}
+                      {(() => {
+                        if (minutosTrabajados > jornadaEstandarMinutos) {
+                          // Caso A: Sobretiempo / Extra (Verde)
+                          const extraMinutos = minutosTrabajados - jornadaEstandarMinutos;
+                          return (
+                            <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-3 text-center flex flex-col justify-center min-h-[75px]">
+                              <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider">EXTRA</span>
+                              <span className="text-xs font-black text-emerald-700 mt-1">
+                                +{formatMinutesToHM(extraMinutos)}
+                              </span>
+                            </div>
+                          );
+                        } else if (minutosTrabajados < jornadaEstandarMinutos) {
+                          // Caso B: Déficit Horario (Rojo)
+                          const deficitMinutos = jornadaEstandarMinutos - minutosTrabajados;
+                          return (
+                            <div className="bg-red-50/40 border border-red-100 rounded-xl p-3 text-center flex flex-col justify-center min-h-[75px]">
+                              <span className="text-[9px] font-bold text-red-600 uppercase tracking-wider">DÉFICIT</span>
+                              <span className="text-xs font-black text-red-700 mt-1">
+                                -{formatMinutesToHM(deficitMinutos)}
+                              </span>
+                            </div>
+                          );
+                        } else {
+                          // Caso C: Jornada Exacta / Estándar (Gris Neutral)
+                          return (
+                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center flex flex-col justify-center min-h-[75px]">
+                              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">ESTÁNDAR</span>
+                              <span className="text-xs font-black text-slate-600 mt-1">
+                                0H 0min
+                              </span>
+                            </div>
+                          );
+                        }
+                      })()}
+
+                      {/* Tarjeta 3: VIÁTICO (Bs. X.XX siempre positivo) */}
+                      <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-3 text-center flex flex-col justify-center min-h-[75px]">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">VIÁTICO</span>
+                        <span className="text-xs font-black text-slate-700 mt-1">
+                          {formatViaticoBolivares(activity.perDiemAmount || 0)}
+                        </span>
                       </div>
+
                     </div>
 
                     <div className="border-t border-slate-100/80 pt-3 flex items-center justify-between gap-3 flex-wrap">
@@ -256,7 +289,7 @@ export default function TechHistoryView({ activities, user, onEdit }: TechHistor
                         )}
                       </div>
                       
-                      {realTotalHours > 10.0 && (
+                      {totalHours > 10.0 && (
                          <div className="w-full mt-2 pt-2 border-t border-slate-50 flex items-center gap-1.5 text-[10px] text-red-600 font-bold bg-red-50/50 px-2 py-1.5 rounded-lg">
                            <AlertCircle size={12} className="text-red-500 flex-shrink-0" />
                            <span className="uppercase tracking-widest">⚠️ Exceso de Jornada (LOTTT)</span>

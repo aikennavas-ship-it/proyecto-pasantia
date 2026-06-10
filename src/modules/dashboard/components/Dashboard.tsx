@@ -35,6 +35,21 @@ interface DashboardProps {
 
 const COLORS = ['#004a99', '#e30613', '#10b981', '#f59e0b', '#6366f1', '#64748b'];
 
+/**
+ * Reduce un nombre completo a Primer Nombre y Primer Apellido.
+ */
+export const formatToShortName = (fullName: string): string => {
+  if (!fullName) return '';
+  const parts = fullName.trim().split(/\s+/);
+  
+  if (parts.length <= 2) return fullName;
+
+  const firstName = parts[0];
+  const firstSurname = parts.length >= 4 ? parts[2] : parts[1];
+  
+  return `${firstName} ${firstSurname}`;
+};
+
 // COMPONENTE TOOLTIP PERSONALIZADO (Evita solapamientos en el centro)
 const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
@@ -334,7 +349,7 @@ export default function Dashboard({
     return Object.entries(perDiemByTech)
       .map(([uid, monto]) => {
         const resolved = obtenerDatosUsuarioReactivo(uid, technicians);
-        return { name: resolved.nombreCompleto, nombreCompleto: resolved.nombreCompleto, monto: monto };
+        return { name: formatToShortName(resolved.nombreCompleto), nombreCompleto: resolved.nombreCompleto, monto: monto };
       })
       .sort((a, b) => b.monto - a.monto)
       .slice(0, 5);
@@ -504,16 +519,42 @@ export default function Dashboard({
             </div>
             <div className="flex-1 min-h-0">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={perDiemChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 9, fontWeight: 700}} height={30} interval={0} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 600}} />
+                <BarChart 
+                  layout="vertical" 
+                  data={perDiemChartData} 
+                  margin={{ top: 10, right: 30, left: 10, bottom: 10 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                  <XAxis 
+                    type="number" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 600}} 
+                  />
+                  <YAxis 
+                    dataKey="name" 
+                    type="category" 
+                    width={110} 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{fill: '#64748b', fontSize: 10, fontWeight: 700}} 
+                  />
                   <Tooltip 
                     cursor={{fill: '#f8fafc'}}
                     contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                    labelFormatter={(label, items) => {
+                      const fullname = items?.[0]?.payload?.nombreCompleto || label;
+                      return fullname;
+                    }}
                     formatter={(value) => [`Bs. ${(value as number).toFixed(2)}`, 'Monto Total']}
                   />
-                  <Bar dataKey="monto" fill="#10b981" radius={[6, 6, 0, 0]} barSize={36} animationDuration={1000} />
+                  <Bar 
+                    dataKey="monto" 
+                    fill="#10b981" 
+                    radius={[0, 6, 6, 0]} 
+                    barSize={16} 
+                    animationDuration={1000} 
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -675,6 +716,162 @@ const formatActivityDate = (a: any) => {
   return `${day}/${month}/${year}`;
 };
 
+/**
+ * Cruza los IDs de la actividad con el personal en memoria y retorna
+ * únicamente el primer y segundo nombre (campo 'nombres') de cada participante.
+ */
+export const obtenerNombresCortosParticipantes = (
+  actividad: any,
+  personalList: any[] = []
+): string => {
+  if (!actividad) return 'Sin asignación';
+  
+  // Obtener arreglo de IDs usando la función segura para asegurar que soportamos todos los formatos
+  let ids = actividad.tecnicosIds || [];
+  if (!ids || ids.length === 0) {
+    ids = inicializarTecnicosIdsSeguro(actividad, personalList);
+  }
+  
+  if (!ids || ids.length === 0) {
+    return 'Sin técnicos asignados';
+  }
+
+  return ids
+    .map((id: any) => {
+      // Buscar el perfil en caliente usando el UID, el Carnet, el ID único o el idSecuencial
+      const tecnico = personalList.find(p => 
+        p.id === id || 
+        p.uid === id || 
+        p.employeeId === id ||
+        p.carnet === id ||
+        (typeof id === 'number' && Number(p.idSecuencial) === id)
+      );
+      
+      // Si el perfil existe, tomamos el campo 'nombres' de forma limpia y dinámica.
+      if (tecnico) {
+        if (tecnico.nombres) return tecnico.nombres;
+        if (tecnico.name) {
+          const parts = tecnico.name.trim().split(/\s+/);
+          return parts.slice(0, 2).join(' ');
+        }
+        return 'Técnico';
+      }
+      return 'Técnico';
+    })
+    .join(', ');
+};
+
+/**
+ * Extrae únicamente el primer nombre de cada participante.
+ * Ejemplo: "Ackerley Aiken" -> "Ackerley"
+ */
+export const obtenerSoloPrimerNombre = (
+  actividad: any,
+  personalList: any[] = []
+): string => {
+  if (!actividad) return 'Sin técnicos';
+  
+  let ids = actividad.tecnicosIds || [];
+  if (!ids || ids.length === 0) {
+    ids = inicializarTecnicosIdsSeguro(actividad, personalList);
+  }
+
+  if (!ids || ids.length === 0) {
+    return 'Sin técnicos';
+  }
+
+  return ids
+    .map((id: any) => {
+      const tecnico = personalList.find(p => 
+        p.id === id || 
+        p.uid === id || 
+        p.employeeId === id ||
+        p.carnet === id ||
+        (typeof id === 'number' && Number(p.idSecuencial) === id)
+      );
+      if (!tecnico) return 'Técnico';
+      
+      const primerNombre = (tecnico.nombres || '').trim().split(' ')[0];
+      if (primerNombre) return primerNombre;
+      
+      if (tecnico.name) {
+        return tecnico.name.trim().split(/\s+/)[0];
+      }
+      return 'Técnico';
+    })
+    .join(', ');
+};
+
+/**
+ * Retorna el nombre y apellido completos de un técnico para la lista de líderes.
+ * Ejemplo: "Ackerley Aiken Navas Peña"
+ */
+export const obtenerNombreCompleto = (
+  id: any,
+  personalList: any[] = []
+): string => {
+  const tecnico = personalList.find(p => 
+    p.id === id || 
+    p.uid === id || 
+    p.employeeId === id ||
+    p.carnet === id ||
+    (typeof id === 'number' && Number(p.idSecuencial) === id)
+  );
+  if (!tecnico) return 'Técnico Desconocido';
+  
+  const nombres = (tecnico.nombres || '').trim();
+  const apellidos = (tecnico.apellidos || '').trim();
+  if (nombres || apellidos) {
+    return `${nombres} ${apellidos}`.trim();
+  }
+  return tecnico.name || 'Técnico Desconocido';
+};
+
+/**
+ * Retorna los participantes con formato "Primer Nombre Primer Apellido"
+ * Ejemplo: "Ackerley Aiken" (Nombres) y "Navas Peña" (Apellidos) -> "Ackerley Navas"
+ */
+export const obtenerCuadrillaLimpia = (
+  actividad: any,
+  personalList: any[] = []
+): string => {
+  if (!actividad) return 'Sin asignación';
+  
+  let ids = actividad.tecnicosIds || [];
+  if (!ids || ids.length === 0) {
+    ids = inicializarTecnicosIdsSeguro(actividad, personalList);
+  }
+
+  if (!ids || ids.length === 0) {
+    return 'Sin técnicos asignados';
+  }
+
+  return ids
+    .map((id: any) => {
+      const tecnico = personalList.find(p => 
+        p.id === id || 
+        p.uid === id || 
+        p.employeeId === id ||
+        p.carnet === id ||
+        (typeof id === 'number' && Number(p.idSecuencial) === id)
+      );
+      if (!tecnico) return 'Técnico';
+      
+      const primerNombre = (tecnico.nombres || '').trim().split(' ')[0];
+      const primerApellido = (tecnico.apellidos || '').trim().split(' ')[0];
+      
+      if (!primerNombre && !primerApellido && tecnico.name) {
+        const parts = tecnico.name.trim().split(/\s+/);
+        const namePart1 = parts[0] || '';
+        const namePart2 = parts[2] || parts[1] || '';
+        return `${namePart1} ${namePart2}`.trim();
+      }
+      
+      return `${primerNombre} ${primerApellido}`.trim();
+    })
+    .join(', ');
+};
+
 function SummaryItemRow({ 
   label, 
   value, 
@@ -683,7 +880,11 @@ function SummaryItemRow({
   techName, 
   dateString, 
   rawLabel = false, 
-  rawTechName = false 
+  rawTechName = false,
+  isFlota = false,
+  isLabores = false,
+  activity,
+  personalList = []
 }: { 
   label: string; 
   value: string; 
@@ -692,8 +893,113 @@ function SummaryItemRow({
   techName?: string; 
   dateString?: string; 
   rawLabel?: boolean; 
-  rawTechName?: boolean 
+  rawTechName?: boolean;
+  isFlota?: boolean;
+  isLabores?: boolean;
+  activity?: any;
+  personalList?: any[];
 }) {
+  if (isLabores) {
+    const fechaCorta = dateString && dateString.includes('/') ? (() => {
+      const [dVal, mVal, yVal] = dateString.split('/');
+      return formatDateSpanish(new Date(Number(yVal), Number(mVal) - 1, Number(dVal)), 'dd MMM').toUpperCase();
+    })() : (dateString || value);
+
+    return (
+      <div className="border border-slate-100 p-4 rounded-xl bg-white shadow-sm hover:shadow-md transition-shadow">
+        
+        {/* Título de la actividad e Incidente */}
+        <div>
+          <h4 className="font-bold text-slate-800 text-sm uppercase tracking-wide">
+            {rawLabel ? label : capitalizeSentence(label)}
+          </h4>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">
+            {sub}
+          </p>
+        </div>
+
+        {/* Fecha corta con su icono de calendario */}
+        <div className="flex items-center gap-1.5 mt-2 text-xs text-slate-800 font-extrabold">
+          <Calendar size={12} className="text-blue-600 opacity-100 shrink-0" />
+          <span className="uppercase">{fechaCorta}</span>
+        </div>
+
+        {/* Integrantes: Icono de usuario único y solo el primer nombre */}
+        <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-2">
+          <User size={12} className="text-slate-400 opacity-100 shrink-0" />
+          <span className="text-slate-600 font-medium">
+            {obtenerSoloPrimerNombre(activity, personalList)}
+          </span>
+        </div>
+
+      </div>
+    );
+  }
+
+  if (isFlota) {
+    const isNoUse = value === "Sin Uso" || value === "0 Servicios";
+    return (
+      <div className="flex items-center justify-between gap-4 p-4 bg-white border border-slate-100 rounded-xl shadow-sm hover:shadow-md transition-shadow group">
+        {/* Lado Izquierdo: Información unificada en solo 2 filas */}
+        <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+          
+          {/* Fila 1: Nombre del Vehículo + Badge de Estado Minimalista */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-bold text-slate-800 text-sm tracking-wide uppercase">
+              {label}
+            </span>
+            {/* Indicador de estado inline (elegante y compacto) */}
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              Operativo
+            </span>
+          </div>
+
+          {/* Fila 2: Conductor asignado con icono SVG limpio */}
+          <div className="flex items-center gap-1.5 text-xs text-slate-500 truncate">
+            <svg 
+              className="w-3.5 h-3.5 text-slate-400 shrink-0" 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24" 
+              strokeWidth="2"
+            >
+              <path 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" 
+              />
+            </svg>
+            <span className="truncate">
+              {techName ? (
+                techName.startsWith('Conductor:') ? (
+                  <>
+                    <span className="text-slate-400 font-normal">Conductor: </span>
+                    <span className="font-medium text-slate-700">{techName.replace('Conductor: ', '')}</span>
+                  </>
+                ) : (
+                  <span className="font-medium text-slate-700">{techName}</span>
+                )
+              ) : (
+                <span className="text-slate-400 italic font-normal">Sin conductor asignado</span>
+              )}
+            </span>
+          </div>
+
+        </div>
+
+        {/* Lado Derecho: Badge de Servicios perfectamente centrado */}
+        <span className={cn(
+          "text-xs font-bold px-3 py-1.5 rounded-lg border whitespace-nowrap shadow-sm transition-all duration-300 shrink-0",
+          isNoUse 
+            ? "bg-slate-50 text-slate-400 border-slate-200/50 font-medium" 
+            : "bg-slate-100 text-slate-700 border-slate-200/80 font-bold"
+        )}>
+          {value}
+        </span>
+      </div>
+    );
+  }
   const isDate = /^\d{2}\/\d{2}\/\d{4}$/.test(sub);
   let displaySub = sub;
   if (isDate) {
@@ -736,7 +1042,7 @@ function SummaryItemRow({
         </p>
         
         {(techName || dateString) ? (
-          <div className="flex text-xs text-slate-705 font-bold gap-4 mt-1.5 flex-wrap">
+          <div className="flex text-xs text-slate-800 font-extrabold gap-4 mt-1.5 flex-wrap">
             {dateString && (
               <span className="flex items-center gap-1.5 shrink-0 leading-none">
                 <Calendar size={12} className="text-blue-600 opacity-100 shrink-0" />
@@ -747,9 +1053,14 @@ function SummaryItemRow({
               </span>
             )}
             {techName && (
-              <span className="flex items-center gap-1.5 whitespace-normal leading-none max-w-full truncate">
-                <User size={12} className="text-slate-600 opacity-100 shrink-0" />
+              <span className="flex items-center gap-1.5 whitespace-normal leading-none max-w-full truncate text-slate-600">
+                <User size={12} className="text-slate-400 opacity-100 shrink-0" />
                 {rawTechName ? techName : capitalizeSentence(techName)}
+              </span>
+            )}
+            {displaySub && techName && (techName.includes('Conductor:') || techName.includes('conductor') || techName.includes('Conductores:')) && (
+              <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block w-full mt-0.5">
+                {displaySub}
               </span>
             )}
           </div>
@@ -1015,6 +1326,27 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
     return result;
   }, [activities, safeGetActivityDate]);
 
+  const lideresDeCampo = React.useMemo(() => {
+    const techCounts: Record<string, number> = {};
+    activities.forEach(a => {
+      const uids = inicializarTecnicosIdsSeguro(a, technicians);
+      uids.forEach(uid => {
+        const resolved = obtenerDatosUsuarioReactivo(uid, technicians);
+        techCounts[resolved.uid] = (techCounts[resolved.uid] || 0) + 1;
+      });
+    });
+
+    return Object.entries(techCounts)
+      .map(([uid, count]) => {
+        return { 
+          id: uid, 
+          nombreCompleto: obtenerNombreCompleto(uid, technicians), 
+          labores: count 
+        };
+      })
+      .sort((a, b) => b.labores - a.labores);
+  }, [activities, technicians]);
+
   const getSummaryContent = () => {
     switch(type) {
       case 'personal':
@@ -1050,23 +1382,29 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
             label: a.title,
             value: formatActivityDate(a),
             sub: a.incidentNumber || 'S/N',
-            techName: a.participants && a.participants.length > 0 ? a.participants.map(p => p).join(', ') : a.technicianName,
-            dateString: formatActivityDate(a)
+            techName: obtenerNombresCortosParticipantes(a, technicians),
+            dateString: formatActivityDate(a),
+            activity: a
           })),
           extra: (
             <div className="mt-4 pt-4 border-t border-slate-100">
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Líderes de Campo</p>
-              <div className="flex flex-col gap-2">
-                {topTechs.map((tecnico) => (
-                  <div key={`top-leader-${tecnico.name}`} className="flex items-center justify-between gap-4 p-3 bg-slate-50 border border-slate-100 rounded-xl transition-all">
+              
+              {/* Contenedor adaptativo con scroll vertical si hay más de 5 elementos */}
+              <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
+                {lideresDeCampo.map((tecnico) => (
+                  <div key={`top-leader-${tecnico.id}`} className="flex items-center justify-between gap-4 p-3 bg-slate-50 border border-slate-100 rounded-xl transition-all">
                     <span className="font-semibold text-slate-700 text-xs sm:text-sm whitespace-normal leading-tight min-w-0 flex-1">
-                      {tecnico.nombreCompleto || tecnico.name}
+                      {tecnico.nombreCompleto}
                     </span>
                     <span className="font-bold text-[#004a99] bg-blue-50 px-2.5 py-1 rounded-lg text-xs shrink-0 select-none">
                       {tecnico.labores} {tecnico.labores === 1 ? 'Labor' : 'Labores'}
                     </span>
                   </div>
                 ))}
+                {lideresDeCampo.length === 0 && (
+                  <p className="text-xs text-slate-400 text-center py-2">Sin asignaciones</p>
+                )}
               </div>
             </div>
           )
@@ -1206,10 +1544,34 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
           bg: "bg-slate-100",
           items: uniqueFleets.map(f => {
             const count = fleetUses[f] || 0;
+            const normF = normalizeFleet(f);
+            
+            // Collect all unique drivers for this vehicle
+            const fleetDrivers = new Set<string>();
+            activities.forEach(a => {
+              if (a.fleet && normalizeFleet(a.fleet) === normF && a.driver) {
+                const trimD = a.driver.trim();
+                const upperD = trimD.toUpperCase();
+                if (upperD !== 'NINGUNO' && upperD !== 'NINGUNA' && upperD !== 'S/N' && upperD !== '---' && trimD) {
+                  // Format to Title Case
+                  const titleCaseD = trimD
+                    .toLowerCase()
+                    .split(/\s+/)
+                    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                    .join(' ');
+                  fleetDrivers.add(titleCaseD);
+                }
+              }
+            });
+
+            const sortedDrivers = Array.from(fleetDrivers).sort();
+            const driversStr = sortedDrivers.length > 0 ? sortedDrivers.join(', ') : '';
+
             return {
               label: f,
               value: count > 0 ? `${count} ${count === 1 ? 'Servicio' : 'Servicios'}` : 'Sin Uso',
-              sub: 'Vehículo Operativo'
+              sub: 'Vehículo Operativo',
+              techName: driversStr ? `Conductor: ${driversStr}` : 'Sin conductor asignado'
             };
           }),
           extra: null
@@ -1392,15 +1754,21 @@ function SummaryModal({ type, onClose, activities, topTechs, technicians, onSeeD
               })()}
 
               <div className="space-y-2">
-                {content.items.map((item, i) => (
+                {content.items.map((item: any, i) => (
                   <SummaryItemRow 
                     key={`summary-item-${type}-${i}-${item.label}`}
                     label={item.label}
                     value={item.value}
                     sub={item.sub}
                     color={content.color}
-                    rawLabel={type === 'personal'}
+                    rawLabel={type === 'personal' || type === 'flota'}
                     rawTechName={true}
+                    techName={item.techName}
+                    dateString={item.dateString}
+                    isFlota={type === 'flota'}
+                    isLabores={type === 'labores'}
+                    activity={item.activity}
+                    personalList={technicians}
                   />
                 ))}
                 {content.items.length === 0 && (

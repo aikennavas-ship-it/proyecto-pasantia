@@ -360,7 +360,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
                   className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors font-mono"
                   placeholder="INC-2026-05105"
                   value={formData.incidentNumber}
-                  onChange={e => setFormData({ ...formData, incidentNumber: formatIncidentNumber(e.target.value) })}
+                  onChange={e => setFormData({ ...formData, incidentNumber: formatIncidentNumber(e.target.value).toUpperCase() })}
                 />
               </div>
 
@@ -373,7 +373,7 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
                   placeholder="Hilux V-21 / V-456"
                   disabled={esSinManejo}
                   value={formData.fleet}
-                  onChange={e => setFormData({ ...formData, fleet: e.target.value })}
+                  onChange={e => setFormData({ ...formData, fleet: e.target.value.toUpperCase() })}
                 />
               </div>
 
@@ -425,7 +425,11 @@ export default function ActivityForm({ onSubmit, onClose, initialData, technicia
                   placeholder="Carlos Rodríguez"
                   disabled={esSinManejo}
                   value={formData.driver}
-                  onChange={e => setFormData({ ...formData, driver: e.target.value })}
+                  onChange={e => {
+                    const val = e.target.value;
+                    const converted = val.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+                    setFormData({ ...formData, driver: converted });
+                  }}
                 />
               </div>
 

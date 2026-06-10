@@ -280,7 +280,7 @@ export default function Layout({ children, activeTab, setActiveTab, user, onLogo
                         <p className="text-xs text-slate-500 font-medium truncate px-4">{user?.email}</p>
                         <div className="pt-2">
                           <span className="inline-flex px-3 py-1 bg-brand-blue/10 text-brand-blue text-[10px] font-black uppercase tracking-widest rounded-full border border-brand-blue/10">
-                            {user?.role === 'admin' ? 'Administrador General' : user?.role === 'supervisor' ? 'Supervisor' : 'Técnico Especialista'}
+                            {user?.role === 'admin' ? 'Administrador General' : user?.role === 'supervisor' ? 'Supervisor' : 'Técnico'}
                           </span>
                         </div>
                       </div>

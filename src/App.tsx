@@ -58,7 +58,8 @@ const RecycleBin = lazy(() => import('./modules/recycle-bin/components/RecycleBi
 import { Plus, Search, Filter, ClipboardList, Settings, Download, FileText, Table, Users, Target, Eye, ShieldCheck, History, LayoutGrid, List, Camera, UserCircle, Check, X, Loader2, Database, Lock, Shield, Moon, Sun, Award, Sliders, Briefcase, Info, Edit2, Trash2 } from 'lucide-react';
 import { cn, resolverPermisosDeSesion } from './lib/utils';
 import { generarMensajeLogin } from './lib/formateador';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { startOfDay, subDays as subDaysFns, startOfWeek as startOfWeekFns, format as formatFns, differenceInDays } from 'date-fns';
@@ -207,6 +208,53 @@ const getFichaLocal = (emailStr: string, techObj?: any): string => {
   return `P00-${4000 + (code % 6000)}`;
 };
 
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid || null,
+      email: auth.currentUser?.email || null,
+      emailVerified: auth.currentUser?.emailVerified || null,
+      isAnonymous: auth.currentUser?.isAnonymous || null,
+      tenantId: auth.currentUser?.tenantId || null,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
 export default function App() {
   // ------------------------------------------------------------------
   // 1. ESTADO DE AUTENTICACIÓN
@@ -218,6 +266,14 @@ export default function App() {
   const [sendPasswordResetEmailHook, resetLoading, resetError] = useSendPasswordResetEmail(auth);
   const [signOut] = useSignOut(auth);
 
+  // Control de bucles infinitos de escritura y fallback seguro
+  const profileCreatedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!user) {
+      profileCreatedRef.current = false;
+    }
+  }, [user]);
+
   // ------------------------------------------------------------------
   // 2. ESTADOS GLOBALES DE LA UI
   // ------------------------------------------------------------------
@@ -226,6 +282,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = React.useState(''); // Búsqueda global (aunque a veces inactiva)
   const [isExportMenuOpen, setIsExportMenuOpen] = React.useState(false);
   const [selectedDate, setSelectedDate] = React.useState(new Date()); // Fecha para la hoja de actividades
+  const [highlightedActivityId, setHighlightedActivityId] = React.useState<string | null>(null);
   const [userProfile, setUserProfile] = React.useState<UserProfile | null>(null);
   const [isProfileLoading, setIsProfileLoading] = React.useState(true);
   const [isUnauthorized, setIsUnauthorized] = React.useState(false);
@@ -244,6 +301,8 @@ export default function App() {
 
   const [techProfileInfo, setTechProfileInfo] = React.useState<{
     name?: string;
+    nombres?: string;
+    apellidos?: string;
     employeeId: string;
     idCard: string;
     specialty: string;
@@ -444,37 +503,58 @@ export default function App() {
       setIsDeleting(true);
       setErrorBorrado(null);
 
-      // 1. Crear la credencial de re-autenticación
+      // 1. Buscar perfil correspondiente en la colección technicians
+      const matchingTech = (technicians || []).find(
+        t => t.email && t.email.toLowerCase().trim() === auth.currentUser?.email?.toLowerCase().trim()
+      );
+
+      // 2. Guardia del Último Administrador (Evitar orfandad del sistema)
+      const activeAdmins = (technicians || []).filter(
+        t => (t.status || '').toLowerCase() === 'activo' && t.role === 'admin'
+      );
+
+      if (activeAdmins.length <= 1 && matchingTech?.role === 'admin') {
+        setErrorBorrado('Operación denegada: Eres el único Administrador General activo. Debes promover a otro administrador antes de eliminar tu cuenta.');
+        setIsDeleting(false);
+        return;
+      }
+
+      // 3. Crear la credencial de re-autenticación
       const credential = EmailAuthProvider.credential(
         auth.currentUser.email,
         contrasenaConfirmacion
       );
 
-      // 2. Validar la contraseña contra los servidores de Firebase Auth (Re-auth)
+      // 4. Validar la contraseña contra los servidores de Firebase Auth (Re-auth)
       await reauthenticateWithCredential(auth.currentUser, credential);
       console.log("✓ Re-autenticación exitosa. Procediendo con el borrado seguro...");
 
-      // 3. Buscar perfil correspondiente si existe en technicians para borrar de la base de datos
-      const matchingTech = (technicians || []).find(
-        t => t.email && t.email.toLowerCase().trim() === auth.currentUser?.email?.toLowerCase().trim()
-      );
-      if (matchingTech?.id) {
-        await deleteDoc(doc(db, 'technicians', matchingTech.id));
+      // 5. Eliminar el documento de Firestore MIENTRAS siga autenticado
+      try {
+        if (matchingTech?.id) {
+          await deleteDoc(doc(db, 'technicians', matchingTech.id));
+        }
+        // Eliminar el documento de Firestore de la colección users
+        await deleteDoc(doc(db, 'users', auth.currentUser.uid));
+        console.log("✓ Documentos de Firestore eliminados.");
+      } catch (firestoreError) {
+        console.warn(
+          "Advertencia: El documento de Firestore no pudo eliminarse debido a restricciones de seguridad del sistema. Continuando con la revocación de credenciales...", 
+          firestoreError
+        );
       }
 
-      // Eliminar el documento de Firestore de la colección users
-      await deleteDoc(doc(db, 'users', auth.currentUser.uid));
-      console.log("✓ Documentos de Firestore eliminados.");
-
-      // 4. Eliminar el usuario de Firebase Auth de forma definitiva
+      // 6. Eliminar el usuario de Firebase Auth de forma definitiva inmediatamente después
       await deleteUser(auth.currentUser);
       console.log("✓ Usuario de Firebase Auth eliminado.");
 
       setIsDeleteConfirmOpen(false);
     } catch (error: any) {
       console.error("Error durante el borrado seguro:", error);
-      if (error.code === 'auth/wrong-password') {
+      if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
         setErrorBorrado("La contraseña ingresada es incorrecta. Inténtalo de nuevo.");
+      } else if (error.code === 'auth/requires-recent-login') {
+        setErrorBorrado("Por seguridad, vuelva a iniciar sesión antes de realizar esta acción.");
       } else {
         setErrorBorrado("Ocurrió un error al procesar la solicitud de baja de cuenta: " + (error.message || error.code));
       }
@@ -549,9 +629,39 @@ export default function App() {
           }
           profileToSet = { ...profileData, role: targetRole as any } as UserProfile;
         } else {
-          // Si no existe, crear perfil temporal de fallback y persistirlo para que otros módulos (y reglas Firestore) puedan validarlo
+          // El perfil no existe en la colección 'users'. Validamos si es un usuario legítimo o huérfano.
+          const { collection, query, where, getDocs } = await import('firebase/firestore');
+          const techQuery = query(collection(db, 'technicians'), where('email', '==', trimmedEmail));
+          const techSnap = await getDocs(techQuery);
+          
+          const hasTechRecord = techSnap.docs.some(doc => {
+            const data = doc.data();
+            return data && data.isDeleted !== true;
+          });
+
+          // Si no está registrado como admin ni tiene ficha técnica activa, es un usuario fantasma
+          if (!isAdminEmail && !hasTechRecord) {
+            console.warn("Detectado usuario fantasma o eliminado sin perfil ni registro de personal técnico. Forzando cierre de sesión preventivo.");
+            await signOut();
+            setUserProfile(null);
+            setIsProfileLoading(false);
+            return;
+          }
+
+          // Si es un usuario legítimo, creamos e insertamos su perfil en Firestore para evitar estados huérfanos/zombies futuros
           targetRole = isAdminEmail ? 'admin' : 'tecnico';
+          let userDept = 'Datos';
           let rawName = user.displayName || user.email?.split('@')[0] || 'Usuario';
+          
+          const matchingTechDoc = techSnap.docs.find(doc => doc.data() && doc.data().isDeleted !== true);
+          if (matchingTechDoc) {
+            const techData = matchingTechDoc.data();
+            userDept = techData.department || 'Datos';
+            if (techData.name) {
+              rawName = techData.name;
+            }
+          }
+
           rawName = rawName.replace(/[^a-zA-Z\s]/g, ' ').trim().replace(/\s+/g, ' '); 
           let formattedName = rawName.split(' ').map((idx: string) => idx.charAt(0).toUpperCase() + idx.slice(1).toLowerCase()).join(' ');
 
@@ -561,15 +671,15 @@ export default function App() {
             displayName: formattedName,
             photoURL: user.photoURL || '',
             role: targetRole as any,
-            department: 'Datos',
+            department: userDept as any,
             createdAt: Timestamp.now(),
           } as UserProfile;
 
-          // Se persiste una única vez (no sobreescribe en logins futuros)
           try {
-            await setDoc(docRef, profileToSet);
-          } catch (createErr) {
-            console.error("No se pudo crear el documento de perfil persistente (la sesión continuará en memoria):", createErr);
+            await setDoc(doc(db, 'users', user.uid), profileToSet);
+            console.log("✓ Perfil de usuario legítimo auto-provisionado exitosamente en Firestore.");
+          } catch (provErr) {
+            console.error("Fallo al persistir auto-provisionamiento de perfil en Firestore (permisos limitados?):", provErr);
           }
         }
         
@@ -590,8 +700,8 @@ export default function App() {
              const currentStatus = (techData.status || '').toLowerCase().trim();
              const isSoftDeleted = techData.isDeleted === true;
 
-             if (isSoftDeleted || currentStatus === 'inactivo' || currentStatus === 'baja' || currentStatus === 'reposo' || currentStatus === 'vacaciones') {
-                setSuspendedStatus(isSoftDeleted ? 'baja' : currentStatus);
+             if (isSoftDeleted || currentStatus !== 'activo') {
+                setSuspendedStatus(isSoftDeleted ? 'baja' : techData.status || 'inactivo');
                 setIsUnauthorized(true);
              } else {
                 setSuspendedStatus(null);
@@ -600,6 +710,8 @@ export default function App() {
 
              setTechProfileInfo({
                 name: techData.name,
+                nombres: techData.nombres,
+                apellidos: techData.apellidos,
                 employeeId: techData.employeeId || (targetRole === 'admin' ? 'P00-111111' : 'P00-NO-ASIG'),
                 idCard: techData.idCard || (targetRole === 'admin' ? 'V-11.111.111' : 'V-00.000.000'),
                 specialty: techData.specialty || (targetRole === 'admin' ? 'Administrador General' : 'Especialista'),
@@ -631,6 +743,10 @@ export default function App() {
         setIsProfileLoading(false);
         setIsUnauthorized(false);
       }
+    }, (snapError) => {
+      console.warn("No se pudo suscribir al perfil /users (error de permisos). Operando perfil en memoria segura con datos autenticados:", snapError);
+      setIsProfileLoading(false);
+      setIsUnauthorized(false);
     });
 
     return () => unsubscribeProfile();
@@ -676,21 +792,29 @@ export default function App() {
   // datos locales o a la sesión de Firebase Auth para evitar pantallas con nombres de usuario vacíos u otros glitch de carga.
   const activeUserProfile = React.useMemo((): UserProfile | null => {
     if (!user) return null;
-    let normalizedRole: 'tecnico' | 'supervisor' | 'admin' = (ADMIN_EMAILS.includes(user.email || '') ? 'admin' : 'tecnico');
-    const rawRole = userProfile?.role;
-    if (rawRole) {
-      const lower = rawRole.toLowerCase().trim();
-      if (lower === 'técnico' || lower === 'tecnico' || lower === 'technician' || lower === 'tecnico especialista') {
-        normalizedRole = 'tecnico';
-      } else if (lower === 'administrador' || lower === 'admin') {
-        normalizedRole = 'admin';
-      } else if (lower === 'supervisor' || lower === 'manager') {
-        normalizedRole = 'supervisor';
-      }
-    }
 
     // Determine matching technician directly from the real-time collection to respect updates 
     const matchingTech = technicians.find(t => t.email && t.email.toLowerCase().trim() === user.email?.toLowerCase().trim());
+
+    // Saneamiento Tolerante de Roles (Previene degradación visual, Alberto Contreras Administrador General, etc.)
+    // Resolviendo el rol con prioridad en:
+    // 1. Entrada de personal en /technicians (el banco general de personal)
+    // 2. Perfil del documento /users
+    // 3. Email en la lista ADMIN_EMAILS
+    let normalizedRole: 'tecnico' | 'supervisor' | 'admin' = (ADMIN_EMAILS.includes(user.email || '') ? 'admin' : 'tecnico');
+    
+    const rawRole = matchingTech?.role || userProfile?.role;
+    if (rawRole) {
+      const lower = rawRole.toLowerCase().trim();
+      if (lower.includes('admin') || lower.includes('gerente')) {
+        normalizedRole = 'admin';
+      } else if (lower.includes('super')) {
+        normalizedRole = 'supervisor';
+      } else if (lower.includes('tecnico') || lower.includes('técnico') || lower.includes('tech') || lower.includes('especialista')) {
+        normalizedRole = 'tecnico';
+      }
+    }
+
     const displayName = matchingTech?.name || userProfile?.displayName || user.displayName || user.email?.split('@')[0] || 'Usuario';
     const photoURL = matchingTech?.photoURL || userProfile?.photoURL || user.photoURL || '';
 
@@ -1382,12 +1506,25 @@ export default function App() {
         }
         
         if (targetUid) {
-          await setDoc(doc(db, 'users', targetUid), {
-            displayName: data.name,
-            role: normalizedRole,
-            department: data.department || 'Datos',
-            email: trimmedEmail
-          }, { merge: true });
+          try {
+            const userDocRef = doc(db, 'users', targetUid);
+            const userDocSnap = await getDoc(userDocRef);
+            
+            let existingData = userDocSnap.exists() ? userDocSnap.data() : null;
+            
+            await setDoc(userDocRef, {
+              uid: targetUid,
+              displayName: data.name,
+              role: normalizedRole,
+              department: data.department || 'Datos',
+              email: trimmedEmail,
+              createdAt: existingData?.createdAt || Timestamp.now(),
+              photoURL: existingData?.photoURL || null,
+              allowPasswordChange: existingData?.allowPasswordChange !== undefined ? existingData.allowPasswordChange : false
+            });
+          } catch (err) {
+            handleFirestoreError(err, OperationType.WRITE, `users/${targetUid}`);
+          }
         }
         
         // If the edited user is the currently logged in user, update local state so the header updates instantly
@@ -1689,6 +1826,19 @@ export default function App() {
         updatedAt: Timestamp.now(),
       }, { merge: true });
 
+      // Detect if execution date changed to redirect the view and highlight the edited activity
+      const oldDate = editingActivity.date ? editingActivity.date.toDate() : null;
+      const dateChanged = oldDate ? (
+        oldDate.getDate() !== date.getDate() ||
+        oldDate.getMonth() !== date.getMonth() ||
+        oldDate.getFullYear() !== date.getFullYear()
+      ) : true;
+
+      if (dateChanged) {
+        setSelectedDate(date);
+      }
+      setHighlightedActivityId(editingActivity.id);
+
       const actDept = (editingActivity.type || userProfile?.department || 'Datos').toUpperCase();
 
       if (isGeneralAdmin) {
@@ -1854,11 +2004,59 @@ export default function App() {
         };
       });
 
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Actividades");
-      XLSX.writeFile(wb, `CANTV_Actividades_${new Date().toISOString().split('T')[0]}.xlsx`);
-      setIsExportMenuOpen(false);
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Actividades');
+
+      if (data.length > 0) {
+        // Extract headers
+        const headers = Object.keys(data[0]);
+        worksheet.addRow(headers);
+        
+        // Add data rows
+        data.forEach(row => {
+          worksheet.addRow(Object.values(row));
+        });
+
+        // Apply borders and styling to all cells
+        worksheet.eachRow((row, rowNumber) => {
+          row.eachCell((cell) => {
+            cell.border = {
+              top: { style: 'thin' },
+              left: { style: 'thin' },
+              bottom: { style: 'thin' },
+              right: { style: 'thin' }
+            };
+            if (rowNumber === 1) {
+              cell.font = { bold: true };
+              cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFE0E0E0' }
+              };
+            }
+          });
+        });
+        
+        // Auto-fit columns
+        worksheet.columns.forEach(column => {
+          let maxLength = 0;
+          column.eachCell!({ includeEmpty: true }, cell => {
+            const columnLength = cell.value ? cell.value.toString().length : 10;
+            if (columnLength > maxLength) {
+              maxLength = columnLength;
+            }
+          });
+          column.width = maxLength < 10 ? 10 : maxLength + 2;
+        });
+      }
+
+      workbook.xlsx.writeBuffer().then((buffer) => {
+        saveAs(new Blob([buffer]), `CANTV_Actividades_${new Date().toISOString().split('T')[0]}.xlsx`);
+        setIsExportMenuOpen(false);
+      }).catch((err) => {
+        console.error("Error writing Excel file:", err);
+        alert("Error al exportar a Excel. Verifique la consola para más detalles.");
+      });
     } catch (err) {
       console.error("Error exporting to Excel:", err);
       alert("Error al exportar a Excel. Verifique la consola para más detalles.");
@@ -1942,7 +2140,7 @@ export default function App() {
   }
 
   if (isUnauthorized && user) {
-    let title = "Acceso No Autorizado";
+    let title = "Acceso Restringido";
     let message = (
       <>
         Tu cuenta (<span className="font-bold text-slate-700">{user.email}</span>) no ha sido habilitada por un administrador del departamento.
@@ -1950,30 +2148,58 @@ export default function App() {
     );
     let footerMessage = "Contacte al Jefe de Departamento para registrar su acceso institucional.";
 
-    if (suspendedStatus === 'vacaciones' || suspendedStatus === 'reposo') {
-      title = "Acceso Temporalmente Suspendido";
+    const statusVal = (suspendedStatus || '').toUpperCase().trim();
+
+    if (statusVal === 'VACACIONES') {
+      title = "Vacaciones Activas";
       message = (
         <>
-          Tu cuenta ha sido suspendida temporalmente por encontrarte en período de <span className="font-bold text-amber-600">{suspendedStatus}</span> activo.
+          Acceso restringido temporalmente por encontrarse en período de <span className="font-bold text-amber-500">vacaciones reglamentarias</span>.
         </>
       );
-      footerMessage = "Contacte al Jefe de Departamento para restablecer su acceso al retornar a sus actividades.";
-    } else if (suspendedStatus === 'inactivo' || suspendedStatus === 'baja') {
-      title = "Acceso Denegado";
+      footerMessage = "Contacte al Administrador del departamento al retornar a sus labores.";
+    } else if (statusVal === 'REPOSO') {
+      title = "Reposo Autorizado";
       message = (
         <>
-          Esta cuenta ha sido desactivada de forma permanente por el Administrador General del departamento.
+          Acceso restringido temporalmente por motivo de <span className="font-bold text-amber-500">reposo médico autorizado</span>.
+        </>
+      );
+      footerMessage = "Contacte al Administrador del departamento para registrar su alta médica.";
+    } else if (statusVal === 'INACTIVO') {
+      title = "Cuenta Inhabilitada";
+      message = (
+        <>
+          Su cuenta ha sido inhabilitada administrativamente.
+        </>
+      );
+      footerMessage = "Contacte al Jefe de Departamento para más detalles.";
+    } else if (statusVal === 'BAJA') {
+      title = "Cuenta de Baja";
+      message = (
+        <>
+          La cuenta ha sido dada de baja definitiva del sistema.
         </>
       );
       footerMessage = "Para más información, diríjase a la Gerencia de Operaciones.";
+    } else if (statusVal && statusVal !== 'ACTIVO') {
+      title = "Acceso Limitado";
+      message = (
+        <>
+          Acceso restringido temporalmente por motivo de: <span className="font-bold text-rose-600">"{suspendedStatus}"</span>.
+        </>
+      );
+      footerMessage = "Contacte al Jefe de Departamento para más información.";
     }
+
+    const isAmberAlert = statusVal === 'VACACIONES' || statusVal === 'REPOSO';
 
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
         <div className="bg-white rounded-[2.5rem] p-8 max-w-md w-full text-center space-y-6 shadow-2xl">
           <div className={cn(
             "w-20 h-20 rounded-3xl flex items-center justify-center mx-auto",
-            (suspendedStatus === 'vacaciones' || suspendedStatus === 'reposo') ? "bg-amber-50 text-amber-500" : "bg-rose-50 text-rose-500"
+            isAmberAlert ? "bg-amber-50 text-amber-500" : "bg-rose-50 text-rose-500"
           )}>
             <ShieldCheck size={40} />
           </div>
@@ -2130,15 +2356,15 @@ export default function App() {
   const currentUserTech = technicians?.find(t => t.email && t.email.toLowerCase().trim() === user.email?.toLowerCase().trim());
   const displayProfileInfo = {
     rol: activeUserProfile?.role || 'tecnico',
-    nombres: currentUserTech?.name ? currentUserTech.name.split(' ').slice(0, 2).join(' ') : (profileForm.displayName || '').split(' ').slice(0, 2).join(' '),
-    apellidos: currentUserTech?.name ? currentUserTech.name.split(' ').slice(2).join(' ') : (profileForm.displayName || '').split(' ').slice(2).join(' '),
+    nombres: currentUserTech?.nombres || techProfileInfo?.nombres || 'Sin registrar',
+    apellidos: currentUserTech?.apellidos || techProfileInfo?.apellidos || 'Sin registrar',
     nombreCompleto: currentUserTech?.name || profileForm.displayName || 'Usuario',
     correo: activeUserProfile?.email || user?.email || '',
     carnet: currentUserTech?.employeeId || techProfileInfo?.employeeId || 'Sin registrar',
     cedula: currentUserTech?.idCard || techProfileInfo?.idCard || 'Sin registrar',
     especialidad: currentUserTech?.specialty || techProfileInfo?.specialty || 'Sin registrar',
     departamento: currentUserTech?.department || techProfileInfo?.department || 'Sin registrar',
-    telefono: currentUserTech?.phoneNumber || currentUserTech?.phone || techProfileInfo?.phoneNumber || 'Sin registrar',
+    telefono: currentUserTech?.phoneNumber || (currentUserTech as any)?.phone || techProfileInfo?.phoneNumber || 'Sin registrar',
     fechaNacimiento: currentUserTech?.fechaNacimiento || techProfileInfo?.fechaNacimiento || 'Sin registrar',
     fechaIngreso: currentUserTech?.fechaIngreso || techProfileInfo?.fechaIngreso || 'Sin registrar',
     direccion: currentUserTech?.direccion || techProfileInfo?.direccion || 'Sin registrar',
@@ -2184,7 +2410,8 @@ export default function App() {
             technicians={technicians || []}
             selectedDate={selectedDate}
             onDateChange={setSelectedDate}
-            highlightedId={editingActivity?.id}
+            highlightedId={highlightedActivityId}
+            onClearHighlight={() => setHighlightedActivityId(null)}
             user={activeUserProfile}
             onAddActivity={() => {
               setEditingActivity(null);
@@ -2293,15 +2520,16 @@ export default function App() {
                   <h3 className="text-base font-black text-slate-800 uppercase tracking-tight truncate">
                     {displayProfileInfo.nombreCompleto}
                   </h3>
-                  <span className="inline-flex self-center sm:self-auto px-2 py-0.5 text-[9px] font-black tracking-wider uppercase rounded-full bg-brand-blue/10 text-[#004a99]">
-                    {displayProfileInfo.rol === 'admin' ? 'ADMINISTRADOR GENERAL' : displayProfileInfo.rol.toUpperCase()}
+                  <span className="inline-flex self-center sm:self-auto px-2 py-0.5 text-[10px] font-bold text-blue-600 bg-blue-50 rounded border border-blue-100 uppercase tracking-wider">
+                    {displayProfileInfo.rol === 'admin' 
+                      ? 'ADMINISTRADOR GENERAL' 
+                      : displayProfileInfo.rol === 'supervisor'
+                      ? 'SUPERVISOR'
+                      : 'TÉCNICO'}
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 font-bold mt-0.5 break-all">
                   {displayProfileInfo.correo}
-                </p>
-                <p className="text-[10px] text-slate-400 mt-2 font-bold tracking-wider uppercase">
-                  {displayProfileInfo.departamento} · CENTRAL MARACAY 4357
                 </p>
               </div>
             </div>

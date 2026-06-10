@@ -21,22 +21,22 @@ const exportarPersonalExcel = async (listaPersonal: Technician[]) => {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('INVENTARIO_PERSONAL_2026');
 
-  // 1. Estructura de columnas del reporte de personal (14 columnas totales)
+  // 1. Estructura de columnas del reporte de personal (14 columnas totales) de acuerdo a requerimiento
   worksheet.columns = [
-    { header: 'P00 (CARNET)', key: 'carnet' },
-    { header: 'NOMBRES Y APELLIDOS', key: 'nombreCompleto' },
-    { header: 'CÉDULA DE IDENTIDAD', key: 'cedula' },
-    { header: 'FECHA DE NACIMIENTO', key: 'fechaNacimiento' },
-    { header: 'DIRECCIÓN DE HABITACIÓN', key: 'direccion' },
-    { header: 'FECHA DE INGRESO', key: 'fechaIngreso' },
-    { header: 'CARGO / ESPECIALIDAD', key: 'especialidad' },
-    { header: 'DEPARTAMENTO', key: 'departamento' },
-    { header: 'TELÉFONO', key: 'telefono' },
-    { header: 'ROL SISTEMA', key: 'rol' },
-    { header: 'ESTADO', key: 'estado' },
-    { header: 'TALLA BOTAS', key: 'tallaBotas' },
-    { header: 'TALLA CAMISA', key: 'tallaCamisa' },
-    { header: 'TALLA PANTALÓN', key: 'tallaPantalon' }
+    { header: 'NOMBRES Y APELLIDOS', key: 'nombreCompleto', width: 30 },
+    { header: 'CARGO', key: 'cargo', width: 20 },
+    { header: 'DEPARTAMENTO', key: 'departamento', width: 18 },
+    { header: 'ROL', key: 'rol', width: 15 },
+    { header: 'P00 (CARNET)', key: 'carnet', width: 15 },
+    { header: 'CÉDULA', key: 'cedula', width: 15 },
+    { header: 'TELÉFONO', key: 'telefono', width: 16 },
+    { header: 'F. NACIMIENTO', key: 'fechaNacimiento', width: 16 },
+    { header: 'DIRECCIÓN', key: 'direccion', width: 35 },
+    { header: 'F. INGRESO', key: 'fechaIngreso', width: 16 },
+    { header: 'TALLA BOTAS', key: 'tallaBotas', width: 14 },
+    { header: 'TALLA CAMISA', key: 'tallaCamisa', width: 14 },
+    { header: 'TALLA PANTALÓN', key: 'tallaPantalon', width: 16 },
+    { header: 'ESTADO', key: 'estado', width: 12 }
   ];
 
   // Estilo estético del encabezado (CANTV Blue #004a99)
@@ -56,10 +56,10 @@ const exportarPersonalExcel = async (listaPersonal: Technician[]) => {
     };
     cell.alignment = { vertical: 'middle', horizontal: 'center' };
     cell.border = {
-      top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-      bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-      left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-      right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+      top: { style: 'thin', color: { argb: 'FF000000' } },
+      bottom: { style: 'thin', color: { argb: 'FF000000' } },
+      left: { style: 'thin', color: { argb: 'FF000000' } },
+      right: { style: 'thin', color: { argb: 'FF000000' } }
     };
   });
 
@@ -76,20 +76,20 @@ const exportarPersonalExcel = async (listaPersonal: Technician[]) => {
   // 2. Población de filas
   listaPersonal.forEach((usuario, index) => {
     const row = worksheet.addRow({
-      carnet: usuario.employeeId,
       nombreCompleto: usuario.name.trim(),
+      cargo: usuario.specialty,
+      departamento: usuario.department,
+      rol: (usuario.role || 'tecnico').toUpperCase(),
+      carnet: usuario.employeeId,
       cedula: usuario.idCard,
+      telefono: usuario.phoneNumber || 'Sin registrar',
       fechaNacimiento: formatearFecha(usuario.fechaNacimiento),
       direccion: usuario.direccion || 'Sin registrar',
       fechaIngreso: formatearFecha(usuario.fechaIngreso),
-      especialidad: usuario.specialty,
-      departamento: usuario.department,
-      telefono: usuario.phoneNumber || 'Sin registrar',
-      rol: (usuario.role || 'tecnico').toUpperCase(),
-      estado: usuario.status.toUpperCase(),
       tallaBotas: usuario.tallaBotas || 'N/R',
       tallaCamisa: usuario.tallaCamisa || 'N/R',
-      tallaPantalon: usuario.tallaPantalon || 'N/R'
+      tallaPantalon: usuario.tallaPantalon || 'N/R',
+      estado: usuario.status.toUpperCase()
     });
 
     row.height = 22; // Alto de fila espacioso
@@ -98,7 +98,7 @@ const exportarPersonalExcel = async (listaPersonal: Technician[]) => {
     const esPar = index % 2 === 0;
     const colorFondoFila = esPar ? 'F8FAFC' : 'FFFFFFFF'; // Gris muy suave en filas pares
 
-    // Alineación central de datos de control, izquierda para nombres y dirección
+    // Alineación central de datos de control, izquierda para nombres (columna 1) y dirección (columna 9)
     row.eachCell((cell, colNumber) => {
       cell.fill = {
         type: 'pattern',
@@ -108,13 +108,13 @@ const exportarPersonalExcel = async (listaPersonal: Technician[]) => {
       cell.font = { name: 'Calibri', size: 10 };
       cell.alignment = {
         vertical: 'middle',
-        horizontal: (colNumber === 2 || colNumber === 5) ? 'left' : 'center'
+        horizontal: (colNumber === 1 || colNumber === 9) ? 'left' : 'center'
       };
       cell.border = {
-        top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-        bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-        left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-        right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+        top: { style: 'thin', color: { argb: 'FF000000' } },
+        bottom: { style: 'thin', color: { argb: 'FF000000' } },
+        left: { style: 'thin', color: { argb: 'FF000000' } },
+        right: { style: 'thin', color: { argb: 'FF000000' } }
       };
     });
   });
@@ -298,6 +298,7 @@ export default function TechnicianManagement({
                 <th className="px-6 py-4 whitespace-nowrap text-center">Rol</th>
                 <th className="px-6 py-4 whitespace-nowrap text-center">P00 (Carnet)</th>
                 <th className="px-6 py-4 whitespace-nowrap text-center">Cédula</th>
+                <th className="px-6 py-4 whitespace-nowrap text-center">Teléfono</th>
                 <th className="px-6 py-4 whitespace-nowrap text-center">F. Nacimiento</th>
                 <th className="px-6 py-4 whitespace-nowrap text-center">Dirección</th>
                 <th className="px-6 py-4 whitespace-nowrap text-center">F. Ingreso</th>
@@ -310,19 +311,20 @@ export default function TechnicianManagement({
               {isLoading ? (
                 [1,2,3].map(i => (
                   <tr key={i} className="animate-pulse">
-                    <td colSpan={12} className="px-6 py-4 h-16 bg-slate-50/30"></td>
+                    <td colSpan={13} className="px-6 py-4 h-16 bg-slate-50/30"></td>
                   </tr>
                 ))
               ) : filteredTechs.length === 0 ? (
                 <tr>
-                   <td colSpan={12} className="px-6 py-12 text-center text-slate-400 italic">
+                   <td colSpan={13} className="px-6 py-12 text-center text-slate-400 italic">
                     No se encontraron técnicos registrados.
                   </td>
                 </tr>
               ) : (
                 filteredTechs.map(tech => {
+                  const esMiPropioPerfil = tech.uid === currentUserId || (tech.email && tech.email.toLowerCase().trim() === currentUserEmail?.toLowerCase().trim());
                   const esFilaAdmin = tech.role === 'admin';
-                  const esOtroAdmin = esFilaAdmin && tech.uid !== currentUserId && tech.email?.toLowerCase().trim() !== currentUserEmail?.toLowerCase().trim();
+                  const esOtroAdmin = esFilaAdmin && !esMiPropioPerfil && tech.uid !== currentUserId && tech.email?.toLowerCase().trim() !== currentUserEmail?.toLowerCase().trim();
                   return (
                     <tr key={tech.id} className="hover:bg-slate-50/50 transition-colors group">
                       <td className="px-6 py-4 whitespace-nowrap text-left">
@@ -366,6 +368,11 @@ export default function TechnicianManagement({
                           {tech.idCard || 'S/N'}
                         </span>
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">
+                          {tech.phoneNumber || 'S/N'}
+                        </span>
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center text-xs text-slate-600 font-medium">
                         {formatearFechaTabla(tech.fechaNacimiento)}
                       </td>
@@ -402,7 +409,30 @@ export default function TechnicianManagement({
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {esOtroAdmin ? (
+                          {esMiPropioPerfil ? (
+                            <>
+                              {onEditTechnician && (
+                                <button 
+                                  disabled
+                                  className="p-1.5 text-slate-300 cursor-not-allowed opacity-50 rounded-lg bg-white border border-slate-200 shadow-sm"
+                                  title="Edición disponible únicamente en tu menú de Configuración"
+                                >
+                                  <svg className="w-4 h-4 mx-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                  </svg>
+                                </button>
+                              )}
+                              {onDeleteTechnician && (
+                                <button 
+                                  disabled
+                                  className="p-1.5 text-slate-300 cursor-not-allowed opacity-50 rounded-lg bg-white border border-slate-200 shadow-sm"
+                                  title="Acción protegida. Eliminación solo disponible mediante Zona de Peligro"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              )}
+                            </>
+                          ) : esOtroAdmin ? (
                             <span 
                               className="px-2.5 py-1.5 bg-slate-100 text-slate-500 text-[10px] font-bold uppercase rounded-lg border border-slate-200 flex items-center justify-center gap-1 cursor-not-allowed select-none shadow-sm"
                               title="Este perfil pertenece a otro Administrador General y está protegido contra modificaciones externas."
@@ -449,8 +479,9 @@ export default function TechnicianManagement({
             <p className="text-center text-slate-400 py-8 italic text-sm">No hay técnicos registrados.</p>
           ) : (
             filteredTechs.map(tech => {
+              const esMiPropioPerfil = tech.uid === currentUserId || (tech.email && tech.email.toLowerCase().trim() === currentUserEmail?.toLowerCase().trim());
               const esFilaAdmin = tech.role === 'admin';
-              const esOtroAdmin = esFilaAdmin && tech.uid !== currentUserId && tech.email?.toLowerCase().trim() !== currentUserEmail?.toLowerCase().trim();
+              const esOtroAdmin = esFilaAdmin && !esMiPropioPerfil && tech.uid !== currentUserId && tech.email?.toLowerCase().trim() !== currentUserEmail?.toLowerCase().trim();
               return (
                 <div key={tech.id} className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4 flex flex-col gap-3">
                   <div className="flex items-center justify-between">
@@ -499,7 +530,30 @@ export default function TechnicianManagement({
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {esOtroAdmin ? (
+                      {esMiPropioPerfil ? (
+                        <>
+                          {onEditTechnician && (
+                            <button 
+                              disabled
+                              className="p-2 text-slate-300 cursor-not-allowed opacity-50 rounded-lg bg-slate-100 border border-slate-200"
+                              title="Edición disponible únicamente en tu menú de Configuración"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                              </svg>
+                            </button>
+                          )}
+                          {onDeleteTechnician && (
+                            <button 
+                              disabled
+                              className="p-2 text-slate-300 cursor-not-allowed opacity-50 rounded-lg bg-slate-100 border border-slate-200"
+                              title="Acción protegida. Eliminación solo disponible mediante Zona de Peligro"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </>
+                      ) : esOtroAdmin ? (
                         <span 
                           className="px-2.5 py-1 bg-slate-100 text-slate-500 text-[9px] font-bold uppercase rounded-md border border-slate-200 flex items-center gap-1 cursor-not-allowed select-none shadow-sm"
                           title="Este perfil pertenece a otro Administrador General y está protegido contra modificaciones externas."

@@ -7,6 +7,40 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * Convierte horas decimales (ej: 6.5) a formato "XH Ymin" (ej: "6H 30min")
+ */
+export const formatDecimalHoursToHM = (horasDecimales?: number | null) => {
+  if (horasDecimales === undefined || horasDecimales === null || isNaN(horasDecimales)) {
+    return "0H 0min";
+  }
+  const totalMinutos = Math.round(horasDecimales * 60);
+  const horas = Math.floor(Math.abs(totalMinutos) / 60);
+  const minutos = Math.abs(totalMinutos) % 60;
+  const flag = horasDecimales < 0 ? '-' : '';
+  return `${flag}${horas}H ${minutos}min`;
+};
+
+/**
+ * Formatea minutos netos a la estructura "XH Ymin"
+ */
+export const formatMinutesToHM = (totalMinutos: number) => {
+  const horas = Math.floor(totalMinutos / 60);
+  const minutos = totalMinutos % 60;
+  return `${horas}H ${minutos}min`;
+};
+
+/**
+ * Formatea viáticos para asegurar el signo positivo y exactamente dos decimales.
+ */
+export const formatViaticoBolivares = (monto?: number | null) => {
+  if (monto === undefined || monto === null || isNaN(monto)) {
+    return "Bs. 0.00";
+  }
+  const valorAbsoluto = Math.abs(monto);
+  return `Bs. ${valorAbsoluto.toFixed(2)}`;
+};
+
+/**
  * Resuelve y unifica los permisos del usuario de forma robusta,
  * tolerando variaciones de mayúsculas, minúsculas o textos largos de base de datos.
  */

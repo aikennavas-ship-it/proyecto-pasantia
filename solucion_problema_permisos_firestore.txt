@@ -1,0 +1,115 @@
+========================================================================
+GUÍA DE ACCIÓN Y ANÁLISIS: SOLUCIÓN AL BUCLE DE PERMISOS EN FIRESTORE
+========================================================================
+
+Este documento detalla la causa técnica detrás de los bucles de permisos
+en Firestore ("Missing or insufficient permissions") combinados con la 
+degradación automática de roles, así como la solución de arquitectura que 
+hemos implementado en la aplicación de control de actividades CANTV.
+
+------------------------------------------------------------------------
+1. EXPLICACIÓN DE LA CAUSA RAÍZ (¿POR QUÉ OCURRÍA EL BUCLE INFINITO?)
+------------------------------------------------------------------------
+El problema que observabas es un comportamiento clásico y crítico cuando se 
+realizan operaciones de escritura asíncronas dentro de suscripciones reactivas 
+en tiempo real (onSnapshot) de Firestore. El flujo destructivo ocurría así:
+
+1. El usuario inicia sesión. El hook useEffect activa una suscripción 
+   onSnapshot para escuchar el documento del perfil en `/users/{uid}`.
+2. Si el documento no existe en `/users/` (o si Alberto Contreras inicia 
+   sesión por primera vez), la suscripción onSnapshot detecta que 
+   `docSnap.exists()` es falso.
+3. El bloque `else` original inmediatamente invocaba `await setDoc(docRef, profileToSet)` 
+   para persistir el perfil inicial.
+4. Aquí es donde entra en juego la Compensación de Latencia (Latency Compensation) 
+   de Firestore:
+   - El SDK de Firestore asume de forma optimista que la escritura será exitosa y 
+     actualiza su caché local de inmediato.
+   - Esta actualización local temporal activa de nuevo el listener onSnapshot, 
+     que ahora recibe un documento que temporalmente "sí existe" (con writes pendientes).
+5. Segundos después, la base de datos de Firebase rechaza la escritura física 
+   debido a las Reglas de Seguridad de Firestore (devolviendo el error "Missing or 
+   insufficient permissions").
+6. Al fallar la escritura en el servidor, el SDK de Firestore revierte (rollback) 
+   el cambio simulado localmente.
+7. Esta reversión reactiva de nuevo a onSnapshot, que ahora ve que el documento 
+   vuelve a "no existir".
+8. Al no existir, el código entra de nuevo en el bloque `else` y vuelve a llamar 
+   a `setDoc(...)` para intentar crear el perfil.
+9. Se genera el bucle recursivo interminable de actualización optimista -> error de 
+   permisos -> rollback -> reintento, saturando el navegador y la base de datos.
+10. Durante cada fallo, el bloque catch o el flujo del frontend resolvía un rol 
+    genérico de fallback ("tecnico") como salvaguarda in-memory. Esto causaba la 
+    degradación visual de administradores como Alberto Contreras (que sí estaban registrados 
+    con privilegios de Administrador General en el catálogo de técnicos/personal autorizado).
+
+------------------------------------------------------------------------
+2. ¿REGLAS DE SEGURIDAD EN COLISIÓN?
+------------------------------------------------------------------------
+El intento de autogestión de perfil a través de un simple setDoc chocaba contra 
+las reglas de Firestore para create en `/users/{userId}`. Las reglas exigían que 
+el rol asignado fuera estrictamente compatible con la identidad del usuario:
+- Un usuario común no puede asignarse el rol 'admin' a menos que esté en una lista 
+  de correos dura muy restringida (ADMIN_EMAILS).
+- Alberto Contreras posee su estatus administrativo en la colección de personal 
+  físico autorizado (`/technicians`), pero al inicializar la sesión en `/users/`, el 
+  código local intentaba provisionarlo preliminarmente con un rol alternativo, lo cual 
+  resultaba en fallas de acceso e inconsistencia funcional.
+
+------------------------------------------------------------------------
+3. SOLUCIONES IMPLEMENTADAS PARA DETENER EL PROCESO DE INMEDIATO
+------------------------------------------------------------------------
+Hemos reestructurado el flujo en `src/App.tsx` aplicando tres mejoras robustas:
+
+A. BANDERA DE CONTROL DE ESCRITURA ÚNICA (Anti-Loop Guard):
+   Introdujimos un `profileCreatedRef = React.useRef(false)` persistente en la sesión. 
+   - El código solo puede ejecutar `setDoc` una única vez por sesión/login.
+   - Al primer intento de creación, la bandera se marca como true.
+   - Si la escritura falla y Firestore realiza el rollback, el siguiente ciclo de 
+     onSnapshot encontrará la bandera en true y omitirá la llamada a setDoc, 
+     manteniendo la sesión activa en memoria segura sin disparar bucles.
+
+B. PRIMACÍA DEL BANCO DE PERSONAL EN EL SANEAMIENTO DE ROLES:
+   Reescribimos el resolvedor del perfil del usuario activo (`activeUserProfile`) para 
+   que resuelva la identidad del usuario mapeando directamente su correo en `/technicians` 
+   en tiempo real (la fuente de verdad de la grilla de personal).
+   - Si Alberto Contreras inicia sesión, el resolvedor ubica su registro técnico y ve 
+     que tiene el rol "Administrador General".
+   - Aplicamos un mapeador ultra-tolerante (Case-Insensitive y substring search):
+     Cualquier rol que incluya "admin" o "gerente" automáticamente se mapea a 'admin'. 
+     Cualquier rol con "super" se mapea a 'supervisor'.
+   - Esto evita de raíz que un Administrador General sea degradado visualmente a Técnico.
+
+C. SUSCRIPCIÓN SEGURA CON MANEJADOR DE ERRORES (Safe Snapshot Failover):
+   Originalmente onSnapshot no tenía callback de error y arrojaba excepciones globales. 
+   Hemos añadido el manejador de error asíncrono para que si falla la validación de lectura 
+   de usuarios en Firestore (por cambios de permisos), la sesión continúe estable 
+   utilizando el perfil computado en memoria a partir del correo autenticado de Firebase Auth.
+
+------------------------------------------------------------------------
+4. SOLUCIONES ALTERNATIVAS A LARGO PLAZO (SI EL PROBLEMA PERSISTIERA)
+------------------------------------------------------------------------
+Si en algún momento deseas reestructurar el sistema de autenticación de forma 
+aún más aislada para blindar la base de datos contra el cliente, puedes optar por:
+
+Opción 1: Cambio de onSnapshot a getDoc Único en Login (Recomendable)
+Instead of onSnapshot (suscripción continua), lee el perfil una sola vez al 
+loguearse mediante `getDoc(docRef)` del perfil. En aplicaciones empresariales 
+donde los roles de sesión cambian raras veces durante el mismo día, realizar un 
+solo GET elimina cualquier posibilidad de bucles reactivos.
+
+Opción 2: Firebase Cloud Functions para Autoprovisionamiento
+Para erradicar la lógica de "creación al vuelo" por el frontend, crea un trigger 
+de base de datos o autenticación con Firebase Cloud Functions (backend):
+- `exports.createProfile = functions.auth.user().onCreate((user) => { ... })`
+Esto crea el documento `/users/{uid}` en el entorno seguro del servidor con el rol 
+adecuado en el momento exacto en que se registra el usuario. El cliente de React 
+solo tiene permisos de lectura GET sobre `/users/{uid}`, lo que bloquea cualquier 
+intento destructivo de escritura desde la web.
+
+Opción 3: Registro Administrado por Consola o Administrador
+Prohibir que el cliente cree perfiles. Un administrador aprueba o asocia al personal 
+con cuentas vinculadas. Las personas no se autoprovisionan, sino que inician sesión 
+y el sistema comprueba contra la base de datos de personal autorizada de CANTV, si 
+no existe en el sistema técnico, se deniega el ingreso de manera limpia en la UI.
+========================================================================

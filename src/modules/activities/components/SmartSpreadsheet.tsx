@@ -35,6 +35,16 @@ export const formatearExcesoTiempo = (totalMinutos: number): string => {
   return `${horas}h ${minutos}min`;
 };
 
+export const formatToTitleCase = (text: string): string => {
+  if (!text) return '';
+  return text
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
+
 interface TecnicoDepurado {
   originalName: string;
   nombreCompleto: string;
@@ -269,14 +279,46 @@ interface SmartSpreadsheetProps {
   onEdit?: (activity: Activity) => void;
   onDelete?: (id: string, title: string) => void;
   highlightedId?: string | null;
+  onClearHighlight?: () => void;
   user?: UserProfile | null;
 }
 
-export default function SmartSpreadsheet({ activities, technicians, onAddActivity, selectedDate, onDateChange, onEdit, onDelete, highlightedId, user }: SmartSpreadsheetProps) {
+export default function SmartSpreadsheet({ activities, technicians, onAddActivity, selectedDate, onDateChange, onEdit, onDelete, highlightedId, onClearHighlight, user }: SmartSpreadsheetProps) {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [selectedTechnician, setSelectedTechnician] = React.useState<string>('todos');
   const [summaryDetails, setSummaryDetails] = React.useState<'total' | 'st' | 'df' | 'exceso' | null>(null);
   const [weeklySummaryDetails, setWeeklySummaryDetails] = React.useState<'total' | 'st' | 'df' | 'exceso' | null>(null);
+
+  const [activeHighlightId, setActiveHighlightId] = useState<string | null>(null);
+  const highlightedRowRef = useRef<HTMLTableRowElement | null>(null);
+  const highlightedCardRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (highlightedId) {
+      setActiveHighlightId(highlightedId);
+      
+      const scrollTimer = setTimeout(() => {
+        if (highlightedRowRef.current) {
+          highlightedRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        if (highlightedCardRef.current) {
+          highlightedCardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 150);
+
+      const clearTimer = setTimeout(() => {
+        setActiveHighlightId(null);
+        if (onClearHighlight) {
+          onClearHighlight();
+        }
+      }, 2500);
+
+      return () => {
+        clearTimeout(scrollTimer);
+        clearTimeout(clearTimer);
+      };
+    }
+  }, [highlightedId, onClearHighlight]);
 
   // Determine "Today" in Maracay (UTC-4)
   const getTodayInMaracay = () => {
@@ -1020,14 +1062,15 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
             <tbody className="font-medium">
               {sortedActivities.length > 0 ? (
                 sortedActivities.map((activity, index) => {
-                  const isHighlighted = highlightedId === activity.id;
+                  const isHighlighted = activeHighlightId === activity.id;
                   return (
                     <tr 
-                       key={`activity-row-${activity.id}`} 
+                      key={`activity-row-${activity.id}`} 
+                      ref={isHighlighted ? highlightedRowRef : undefined}
                       className={cn(
-                        "transition-all duration-300 group relative border-b border-slate-300",
+                        "transition-all duration-1000 group relative border-b border-slate-300",
                         isHighlighted 
-                          ? "bg-brand-blue/5 ring-2 ring-inset ring-brand-blue/20 z-10" 
+                          ? "bg-blue-50/80 border-y-2 border-blue-200 z-10 font-bold" 
                           : "hover:bg-slate-100/50"
                       )}
                     >
@@ -1180,8 +1223,8 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
                       </span>
                     </td>
                     <td className="px-6 py-4 border border-slate-300 text-center">
-                      <span className="text-xs font-black text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-300/60 shadow-sm uppercase tracking-wider block whitespace-nowrap">
-                        {activity.driver || '---'}
+                      <span className="text-xs font-black text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-300/60 shadow-sm normal-case tracking-wider block whitespace-nowrap">
+                        {activity.driver ? formatToTitleCase(activity.driver) : '---'}
                       </span>
                     </td>
                     <td className="px-6 py-4 border border-slate-300 text-center">
@@ -1223,14 +1266,15 @@ export default function SmartSpreadsheet({ activities, technicians, onAddActivit
         <div className="lg:hidden p-4 space-y-4 max-h-[600px] overflow-y-auto custom-scrollbar">
           {sortedActivities.length > 0 ? (
             sortedActivities.map((activity, index) => {
-              const isHighlighted = highlightedId === activity.id;
+              const isHighlighted = activeHighlightId === activity.id;
               return (
                 <div 
                   key={`activity-card-mobile-${activity.id}`} 
+                  ref={isHighlighted ? highlightedCardRef : undefined}
                   className={cn(
-                    "border rounded-2xl p-4 space-y-3 relative overflow-hidden transition-all duration-300",
+                    "border rounded-2xl p-4 space-y-3 relative overflow-hidden transition-all duration-1000",
                     isHighlighted 
-                      ? "bg-brand-blue/5 border-brand-blue ring-2 ring-brand-blue/20 shadow-lg scale-[1.02]" 
+                      ? "bg-blue-50/80 border-blue-400 ring-2 ring-blue-300 shadow-lg scale-[1.02]" 
                       : "bg-slate-50/50 border-slate-300"
                   )}
                 >
